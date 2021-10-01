@@ -1,0 +1,5 @@
+Thirdparty/DBoW3/
+Thirdparty/Eigen/
+Thirdparty/g2o/
+Thirdparty/opencv2/
+Thirdparty/*.so
