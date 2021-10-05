@@ -15,28 +15,14 @@ namespace EdgeSLAM {
 	public:
 		LocalMap();
 		virtual ~LocalMap();
-	public:
-		virtual void UpdateLocalMap(Frame* f, std::vector<RefFrame*>& vpLocalKFs, std::vector<MapPoint*>& vpLocalMPs, std::vector<TrackPoint*>& vpLocalTPs) {}
-		virtual void UpdateLocalKeyFrames(Frame* f, std::vector<RefFrame*>& vpLocalKFs) {}
-		virtual void UpdateLocalMapPoitns(Frame* f, std::vector<RefFrame*>& vpLocalKFs, std::vector<MapPoint*>& vpLocalMPs, std::vector<TrackPoint*>& vpLocalTPs) {}
-	public:
-	    static std::string logFile;
-	private:
-		std::mutex mMutexLocalMap;
+    public:
 
-	};
-
-	class LocalCovisibilityMap :public LocalMap {
 	public:
-		LocalCovisibilityMap();
-		virtual ~LocalCovisibilityMap();
-	public:
-		void UpdateLocalMap(Frame* f, std::vector<RefFrame*>& vpLocalKFs, std::vector<MapPoint*>& vpLocalMPs, std::vector<TrackPoint*>& vpLocalTPs);
-		void UpdateLocalKeyFrames(Frame* f, std::vector<RefFrame*>& vpLocalKFs);
-		void UpdateLocalMapPoitns(Frame* f, std::vector<RefFrame*>& vpLocalKFs, std::vector<MapPoint*>& vpLocalMPs, std::vector<TrackPoint*>& vpLocalTPs);
-		//void UpdateKeyFrames
-	private:
-
+		std::vector<MapPoint*> mvpMapPoints;
+		std::vector<TrackPoint*> mvpTrackPoints;
+		cv::Mat mvfAngles;
+		cv::Mat mvcScales;
+		cv::Mat mDescriptors;
 	};
 }
 

@@ -57,7 +57,21 @@ namespace EdgeSLAM {
 		printf("ref matching %d %d\n", nMatch, nopt);*/
 		return nopt;
 	}
-	int Tracker::TrackWithLocalMap(Frame* cur, float thMaxDesc, float thMinDesc) {
+	int Tracker::TrackWithLocalMap(Frame* cur, LocalMap* pLocal, float thMaxDesc, float thMinDesc) {
+
+        int nMatch = UpdateVisiblePoints(cur, pLocal->mvpMapPoints, pLocal->mvpTrackPoints);
+		if (nMatch == 0)
+			return 0;
+
+        float thRadius = 1.0;
+		if (cur->mnFrameID < mnLastRelocFrameId + 2)
+			thRadius = 5.0;
+
+		int a = SearchPoints::SearchMapByProjection(cur, pLocal->mvpMapPoints, pLocal->mvpTrackPoints, thMaxDesc, thMinDesc, thRadius);
+
+		Optimizer::PoseOptimization(cur);
+
+		/*
 		LocalMap* pLocalMap = new LocalCovisibilityMap();
 		std::vector<MapPoint*> vpLocalMPs;
 		std::vector<RefFrame*> vpLocalKFs;
@@ -77,15 +91,7 @@ namespace EdgeSLAM {
 		int a = SearchPoints::SearchMapByProjection(cur, vpLocalMPs, vpLocalTPs, thMaxDesc, thMinDesc, thRadius);
 
 		Optimizer::PoseOptimization(cur);
-
-		/*
-		std::chrono::high_resolution_clock::time_point end2 = std::chrono::high_resolution_clock::now();
-		auto du_test1 = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
-		float t_test1 = du_test1 / 1000.0;
-		auto du_test2 = std::chrono::duration_cast<std::chrono::milliseconds>(end2 - end).count();
-		float t_test2 = du_test2 / 1000.0;
-		*/
-		//printf("time = %f %f\n", t_test1, t_test2);
+        */
 		return UpdateFoundPoints(cur);
 	}
 
@@ -104,14 +110,14 @@ namespace EdgeSLAM {
 					 cur->mvbOutliers[i] = false;
 					 cur->mspMapPoints.insert(pMP);
 				 }
-				 else if (cur->mvpMapPoints[i]->Observations()>0)
+				 else if (cur->mvpMapPoints[i]->GetObservation()>0)
 					 nres++;
 			 }
 		 }
 		 return nres;
 	 }
 	 int Tracker::UpdateVisiblePoints(Frame* cur, std::vector<MapPoint*> vpLocalMPs, std::vector<TrackPoint*> vpLocalTPs) {
-		 
+
 		 for (int i = 0; i<cur->N; i++)
 		 {
 			 if (cur->mvpMapPoints[i])
@@ -133,9 +139,11 @@ namespace EdgeSLAM {
 		 {
 			 MapPoint* pMP = vpLocalMPs[i];
 			 TrackPoint* pTP = vpLocalTPs[i];
+
 			 if (cur->mspMapPoints.count(pMP))
 				 continue;
 			 nTrial++;
+
 			 // Project (this fills MapPoint variables for matching)
 			 if (cur->is_in_frustum(pMP, pTP, 0.5))
 			 {
@@ -157,7 +165,7 @@ namespace EdgeSLAM {
 				 {
 					 if (!bOnlyTracking)
 					 {
-						 if (cur->mvpMapPoints[i]->Observations()>0)
+						 if (cur->mvpMapPoints[i]->GetObservation()>0)
 							 nres++;
 					 }
 					 else
@@ -168,6 +176,7 @@ namespace EdgeSLAM {
 		 return nres;
 	 }
 
+/*
 	 bool Tracker::NeedNewKeyFrame(Frame* cur, RefFrame* ref, int nKFs, int nMatchesInliers)
 	 {
 
@@ -197,4 +206,5 @@ namespace EdgeSLAM {
 		 }
 		 return false;
 	 }
+	*/
 }

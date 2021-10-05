@@ -10,40 +10,32 @@ namespace EdgeSLAM {
 	class Frame;
 	class RefFrame;
 	class MapPoint;
-	
+	class LocalMap;
 	class Map {
 	public:
 		Map();
 		virtual ~Map();
-	/*public:
-		void AddMapPoint(MapPoint* pMP);
-		void RemoveMapPoint(MapPoint* pMP);
-		std::vector<MapPoint*> GetAllMapPoints();
-		int GetNumMapPoints();
-
-		void AddKeyFrame(RefFrame* pF);
-		RefFrame* GetKeyFrame(int id);
-		void RemoveKeyFrame(RefFrame* pF);
-		std::vector<RefFrame*> GetAllKeyFrames();
-		int GetNumKeyFrames();*/
-
-		void AddImage(cv::Mat gray, int id);
-		cv::Mat GetImage(int id);
+    public:
+        void SetLocalMap(LocalMap* pLocal);
+        LocalMap* GetLocalMap();
+    private:
+        std::mutex mMutexLocalMap;
+        LocalMap* mpLocalMap;
 
 	public:
 		void SetReferenceFrame(RefFrame* pRef);
 		RefFrame* GetReferenceFrame();
-		std::mutex mMutexFrames, mMutexRefFrames, mMutexMapPoints;
-
-		std::map<int, Frame*> mmpFrames;
-		std::map<int, RefFrame*> mmpRefFrames;
-		std::map<int, MapPoint*> mmpMapPoints;
 	private:
-	    std::mutex mMutexFrame;
-	    std::map<int, cv::Mat> mapGrayImages;
-
 		std::mutex mMutexRefFrame;
 		RefFrame* mpRefFrame;
+
+    public:
+        bool CheckMapPoint(int id);
+        void AddMapPoint(int id, MapPoint* pMP);
+        MapPoint* GetMapPoint(int id);
+    private:
+        std::mutex mMutexMapPoints;
+        std::map<int, MapPoint*> mmpMapPoints;
 	};
 }
 

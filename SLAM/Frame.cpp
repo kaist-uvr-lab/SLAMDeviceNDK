@@ -128,30 +128,14 @@ namespace EdgeSLAM {
 		if (u<mnMinX || u>mnMaxX || v < mnMinY || v > mnMaxY)
 			return false;
 
-		// Check distance is in the scale invariance region of the MapPoint
-		const float maxDistance = pMP->GetMaxDistanceInvariance();
-		const float minDistance = pMP->GetMinDistanceInvariance();
-		const cv::Mat PO = P - Ow;
-		const float dist = cv::norm(PO);
-
-		if (dist<minDistance || dist>maxDistance)
-			return false;
-
-		// Check viewing angle
-		cv::Mat Pn = pMP->GetNormal();
-		const float viewCos = PO.dot(Pn) / dist;
-
-		if (viewCos<viewingCosLimit)
-			return false;
-
-		//// Predict scale in the image
-		const int nPredictedLevel = pMP->PredictScale(dist, this);
+        int scale = pMP->GetScale();
+        float angle = pMP->GetAngle();
 
 		pTP->mbTrackInView = true;
 		pTP->mTrackProjX = u;
 		pTP->mTrackProjY = v;
-		pTP->mnTrackScaleLevel = nPredictedLevel;
-		pTP->mTrackViewCos = viewCos;
+		pTP->mnTrackScaleLevel = scale;
+		pTP->mTrackViewCos = angle;
 
 		return true;
 	}

@@ -1,7 +1,9 @@
 #include "Map.h"
+#include "LocalMap.h"
+#include "RefFrame.h"
 
 namespace EdgeSLAM {
-	Map::Map():mpRefFrame(nullptr){
+	Map::Map():mpRefFrame(nullptr), mpLocalMap(nullptr){
 
 	}
 	Map::~Map() {
@@ -10,21 +12,34 @@ namespace EdgeSLAM {
 
 	void Map::SetReferenceFrame(RefFrame* pRef){
 		std::unique_lock<std::mutex> lock(mMutexRefFrame);
+		if(mpRefFrame)
+		    delete mpRefFrame;
 		mpRefFrame = pRef;
 	}
 	RefFrame* Map::GetReferenceFrame() {
 		std::unique_lock<std::mutex> lock(mMutexRefFrame);
 		return mpRefFrame;
 	}
-
-	void Map::AddImage(cv::Mat gray, int id){
-	    std::unique_lock<std::mutex> lock(mMutexFrame);
-	    mapGrayImages.clear();
-	    mapGrayImages.insert(std::make_pair(id, gray.clone()));
-        //mapGrayImages[id] = gray.clone();
-	}
-    cv::Mat Map::GetImage(int id){
-        std::unique_lock<std::mutex> lock(mMutexFrame);
-        return mapGrayImages[id];
+    void Map::SetLocalMap(LocalMap* pLocal){
+        std::unique_lock<std::mutex> lock(mMutexLocalMap);
+        if(mpLocalMap)
+            delete mpLocalMap;
+        mpLocalMap = pLocal;
+    }
+    LocalMap* Map::GetLocalMap(){
+        std::unique_lock<std::mutex> lock(mMutexLocalMap);
+        return mpLocalMap;
+    }
+    bool Map::CheckMapPoint(int id){
+        std::unique_lock<std::mutex> lock(mMutexMapPoints);
+        return mmpMapPoints.count(id)>0;
+    }
+    void Map::AddMapPoint(int id, MapPoint* pMP){
+        std::unique_lock<std::mutex> lock(mMutexMapPoints);
+        mmpMapPoints[id]=pMP;
+    }
+    MapPoint* Map::GetMapPoint(int id){
+        std::unique_lock<std::mutex> lock(mMutexMapPoints);
+        return mmpMapPoints[id];
     }
 }

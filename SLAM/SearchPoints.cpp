@@ -73,7 +73,7 @@ namespace EdgeSLAM {
 					{
 						const size_t i2 = *vit;
 						if (curr->mvpMapPoints[i2])
-							if (curr->mvpMapPoints[i2]->Observations()>0)
+							if (curr->mvpMapPoints[i2]->GetObservation()>0)
 								continue;
 
 						const cv::Mat &d = curr->mDescriptors.row(i2);
@@ -171,7 +171,7 @@ namespace EdgeSLAM {
 			{
 				const size_t idx = *vit;
 
-				if (F->mvpMapPoints[idx] && F->mvpMapPoints[idx]->Observations()>0) {
+				if (F->mvpMapPoints[idx] && F->mvpMapPoints[idx]->GetObservation()>0) {
 					continue;
 				}
 				const cv::Mat &d = F->mDescriptors.row(idx);

@@ -9,15 +9,49 @@ namespace EdgeSLAM {
 	TrackPoint::~TrackPoint() {}
 
 	MapPoint::MapPoint() {}
-	MapPoint::MapPoint(float _x, float _y, float _z): mfMaxDistance(0.0), mfMinDistance(0.0){
+	MapPoint::MapPoint(int id, float _x, float _y, float _z): mnID(id){
 		mWorldPos = cv::Mat::zeros(3, 1, CV_32FC1);
 		mWorldPos.at<float>(0) = _x;
 		mWorldPos.at<float>(1) = _y;
 		mWorldPos.at<float>(2) = _z;
-		mNormalVector = cv::Mat::zeros(3, 1, CV_32F);
 	}
 	MapPoint::~MapPoint(){}
 
+    cv::Mat MapPoint::GetWorldPos()
+	{
+		std::unique_lock<std::mutex> lock(mMutexMP);
+		return mWorldPos.clone();
+	}
+
+    cv::Mat MapPoint::GetDescriptor()
+	{
+		std::unique_lock<std::mutex> lock(mMutexMP);
+		return mDescriptor.clone();
+	}
+
+	float MapPoint::GetAngle(){
+	    std::unique_lock<std::mutex> lock(mMutexMP);
+	    return mfAngle;
+	}
+	int MapPoint::GetScale()
+    {
+        std::unique_lock<std::mutex> lock(mMutexMP);
+        return mnScale;
+    }
+    int MapPoint::GetObservation()
+    {
+        std::unique_lock<std::mutex> lock(mMutexMP);
+        return mnObservation;
+    }
+    void MapPoint::Update(cv::Mat _pos, cv::Mat _desc, float _angle, int _scale, int _obs){
+        std::unique_lock<std::mutex> lock(mMutexMP);
+        mWorldPos = _pos.clone();
+        mDescriptor = _desc.clone();
+        mfAngle = _angle;
+        mnScale = _scale;
+        mnObservation = _obs;
+    }
+    /*
 	void MapPoint::SetWorldPos(float x, float y, float z)
 	{
 		//std::unique_lock<std::mutex> lock2(mGlobalMutex);
@@ -27,11 +61,8 @@ namespace EdgeSLAM {
 		mWorldPos.at<float>(2) = z;
 	}
 
-	cv::Mat MapPoint::GetWorldPos()
-	{
-		std::unique_lock<std::mutex> lock(mMutexPos);
-		return mWorldPos.clone();
-	}
+
+
 
 	cv::Mat MapPoint::GetNormal()
 	{
@@ -57,9 +88,6 @@ namespace EdgeSLAM {
 			return;
 		mObservations[pKF] = idx;
 
-		/*if (pKF->mvuRight[idx] >= 0)
-		nObs += 2;
-		else*/
 		nObs++;
 	}
 
@@ -71,9 +99,7 @@ namespace EdgeSLAM {
 			if (mObservations.count(pKF))
 			{
 				int idx = mObservations[pKF];
-				/*if (pKF->mvuRight[idx] >= 0)
-				nObs -= 2;
-				else*/
+
 				nObs--;
 
 				mObservations.erase(pKF);
@@ -87,8 +113,6 @@ namespace EdgeSLAM {
 			}
 		}
 
-		/*if (bBad)
-			SetBadFlag();*/
 	}
 	std::map<RefFrame*, size_t> MapPoint::GetObservations()
 	{
@@ -110,8 +134,7 @@ namespace EdgeSLAM {
 
 		{
 			std::unique_lock<std::mutex> lock(mMutexFeatures);
-			/*if (mbBad)
-				return;*/
+
 			observations = mObservations;
 		}
 
@@ -169,11 +192,7 @@ namespace EdgeSLAM {
 		}
 	}
 	
-	cv::Mat MapPoint::GetDescriptor()
-	{
-		std::unique_lock<std::mutex> lock(mMutexFeatures);
-		return mDescriptor.clone();
-	}
+
 	bool MapPoint::IsInKeyFrame(RefFrame *pKF)
 	{
 		std::unique_lock<std::mutex> lock(mMutexFeatures);
@@ -249,5 +268,5 @@ namespace EdgeSLAM {
 
 		return nScale;
 	}
-
+    */
 }

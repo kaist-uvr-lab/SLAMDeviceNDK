@@ -9,7 +9,7 @@
 #include <mutex>
 
 namespace EdgeSLAM {
-	class Map;
+    class Map;
 	class Camera;
 	class CameraPose;
 	class ORBDetector;
@@ -17,24 +17,15 @@ namespace EdgeSLAM {
 	class RefFrame {
 	public:
 		RefFrame();
-		RefFrame(Map* map,cv::Mat img, Camera* pCam, float* data);
+		//RefFrame(Map* map,cv::Mat img, Camera* pCam, float* data);
+		RefFrame(Camera* pCam, cv::Mat desc, float* data);
 		virtual ~RefFrame();
+    public:
+		static Map* MAP;
 	public:
-		int TrackedMapPoints(const int &minObs);
+		//int TrackedMapPoints(const int &minObs);
 		std::vector<MapPoint*> GetMapPointMatches();
-		void AddConnection(RefFrame* pKF, const int &weight);
-		void EraseConnection(RefFrame* pKF);
-		void UpdateConnections();
-		void UpdateBestCovisibles();
-		std::set<RefFrame *> GetConnectedKeyFrames();
-		std::vector<RefFrame* > GetVectorCovisibleKeyFrames();
-		std::vector<RefFrame*> GetBestCovisibilityKeyFrames(const int &N);
-		std::vector<RefFrame*> GetCovisiblesByWeight(const int &w);
-		int GetWeight(RefFrame* pKF);
-		void AddChild(RefFrame *pKF);
-		std::set<RefFrame*> GetChilds();
-		RefFrame* GetParent();
-		void UpdateMapPoints();
+
 	public:
 		static bool weightComp(int a, int b) {
 			return a>b;

@@ -30,18 +30,36 @@ namespace EdgeSLAM {
 	class MapPoint {
 	public:
 		MapPoint();
-		MapPoint(float _x, float _y, float _z);
+		MapPoint(int id, float _x, float _y, float _z);
 		virtual ~MapPoint();
+
 	public:
-		void SetWorldPos(float x, float y, float z);
+
+		//void SetWorldPos(float x, float y, float z);
 		cv::Mat GetWorldPos();
+		cv::Mat GetDescriptor();
+        int GetScale();
+        float GetAngle();
+        int GetObservation();
+        void Update(cv::Mat _pos, cv::Mat _desc, float _angle, int _scale, int _obs);
+     private:
+        std::mutex mMutexMP;
+        cv::Mat mWorldPos, mDescriptor;
+        float mfAngle;
+        int mnScale;
+        RefFrame* mpRefKF;
+        int mnObservation;
+    public:
+	    int mnID;
+		static ORBDetector* Detector;
+        /*
 		cv::Mat GetNormal();
 		std::map<RefFrame*, size_t> GetObservations();
 		int Observations();
 		void AddObservation(RefFrame* pKF, size_t idx);
 		void EraseObservation(RefFrame* pKF);
 		void ComputeDistinctiveDescriptors();
-		cv::Mat GetDescriptor();
+
 
 		void UpdateNormalAndDepth();
 		float GetMinDistanceInvariance();
@@ -51,14 +69,13 @@ namespace EdgeSLAM {
 		bool IsInKeyFrame(RefFrame *pKF);
 		void SetReferenceFrame(RefFrame* pRef);
 		RefFrame* GetReferenceFrame();
-	public:
-		static ORBDetector* Detector;
+
 	private:
 		cv::Mat mWorldPos, mNormalVector;
 		std::map<RefFrame*, size_t> mObservations;
 		cv::Mat mDescriptor;
 		
-		RefFrame* mpRefKF;
+
 		int nObs;
 
 		float mfMinDistance;
@@ -66,6 +83,7 @@ namespace EdgeSLAM {
 
 		std::mutex mMutexPos;
 		std::mutex mMutexFeatures;
+		*/
 	};
 }
 #endif
