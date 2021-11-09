@@ -24,6 +24,7 @@ extern "C" {
 
     void WriteLog(char* data);
 
+    bool VisualizeFrame(void* data);
     //bool GetMatchingImage(void* data);
 
 }

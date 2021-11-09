@@ -390,4 +390,46 @@ extern "C" {
         ofile.close();
     }
 
+    bool VisualizeFrame(void* data){
+        if (!pCurrFrame)
+			return false;
+
+        cv::Mat img = cv::Mat(mnHeight, mnWidth, CV_8UC4, data);
+        cv::cvtColor(img, img, cv::COLOR_BGRA2RGBA);
+        cv::flip(img, img,0);
+
+		if (pTracker->mTrackState == EdgeSLAM::TrackingState::Success) {
+
+			for (int i = 0; i < pCurrFrame->N; i++) {
+				if (!pCurrFrame->mvpMapPoints[i] || pCurrFrame->mvbOutliers[i])
+					continue;
+				auto pt = pCurrFrame->mvKeys[i].pt;
+				pt.y = mnHeight -pt.y;
+				cv::circle(img, pt, 2, cv::Scalar(255, 255, 0, 255), -1);
+			}
+
+			std::map<int, cv::Mat> tempInfos;
+			{
+				std::unique_lock<std::mutex> lock(mMutexContentInfo);
+				tempInfos = mapContentInfos;
+			}
+			cv::Mat T = pCurrFrame->GetPose();
+			cv::Mat R = T.colRange(0, 3).rowRange(0, 3);
+			cv::Mat t = T.col(3).rowRange(0, 3);
+			cv::Mat K = pCamera->K.clone();
+			for (auto iter = tempInfos.begin(), iend = tempInfos.end(); iter != iend; iter++) {
+				auto pos = iter->second;
+				cv::Mat temp = K * (R * pos + t);
+				float depth = temp.at<float>(2);
+				if (depth < 0.0)
+					continue;
+				cv::Point2f pt(temp.at<float>(0) / depth, mnHeight-temp.at<float>(1) / depth);
+				cv::circle(img, pt, 3, cv::Scalar(255, 0, 255, 0), -1);
+			}
+		}
+		//cv::flip(img, img, 0);
+		cv::cvtColor(img, img, cv::COLOR_RGBA2BGRA);
+		memcpy(data, img.data, sizeof(cv::Vec4b) * img.rows * img.cols);
+		return true;
+    }
 }
