@@ -14,18 +14,20 @@ namespace EdgeSLAM {
 	class CameraPose;
 	class ORBDetector;
 	class MapPoint;
+	class TrackPoint;
 	class RefFrame {
 	public:
 		RefFrame();
-		//RefFrame(Map* map,cv::Mat img, Camera* pCam, float* data);
+		RefFrame(Camera* pCam, float* data);
 		RefFrame(Camera* pCam, cv::Mat desc, float* data);
 		virtual ~RefFrame();
     public:
 		static Map* MAP;
 	public:
 		//int TrackedMapPoints(const int &minObs);
-		std::vector<MapPoint*> GetMapPointMatches();
-
+		void EraseMapPointMatch(const size_t &idx);
+        void UpdateMapPoints();
+        bool is_in_frustum(MapPoint* pMP, TrackPoint* pTP, float viewingCosLimit);
 	public:
 		static bool weightComp(int a, int b) {
 			return a>b;
@@ -70,7 +72,6 @@ namespace EdgeSLAM {
 	public:
 		Camera* mpCamera;
 		static ORBDetector* detector;
-
 		std::vector<cv::KeyPoint> mvKeys,mvKeysUn;
 		std::vector<bool> mvbOutliers;
 		std::vector<MapPoint*> mvpMapPoints;
@@ -78,9 +79,9 @@ namespace EdgeSLAM {
 		DBoW3::BowVector mBowVec;
 		DBoW3::FeatureVector mFeatVec;
 	private:
-    		void UndistortKeyPoints();
-    		void AssignFeaturesToGrid();
-    		bool PosInGrid(const cv::KeyPoint &kp, int &posX, int &posY);
+        void UndistortKeyPoints();
+        void AssignFeaturesToGrid();
+        bool PosInGrid(const cv::KeyPoint &kp, int &posX, int &posY);
 	private:
 		std::mutex mMutexFeatures, mMutexConnections;
 	public:

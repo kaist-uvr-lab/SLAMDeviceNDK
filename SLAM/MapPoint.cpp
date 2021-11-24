@@ -2,6 +2,7 @@
 #include "RefFrame.h"
 #include "Frame.h"
 #include "ORBDetector.h"
+#include "Map.h"
 
 namespace EdgeSLAM {
 	TrackPoint::TrackPoint() :mbTrackInView(false) {}
@@ -9,7 +10,7 @@ namespace EdgeSLAM {
 	TrackPoint::~TrackPoint() {}
 
 	MapPoint::MapPoint() {}
-	MapPoint::MapPoint(int id, float _x, float _y, float _z): mnID(id){
+	MapPoint::MapPoint(int id, float _x, float _y, float _z): mnID(id), mpRefKF(nullptr), mbBad(false), mfMinDistance(0), mfMaxDistance(0), nObs(0){
 		mWorldPos = cv::Mat::zeros(3, 1, CV_32FC1);
 		mWorldPos.at<float>(0) = _x;
 		mWorldPos.at<float>(1) = _y;
@@ -19,66 +20,113 @@ namespace EdgeSLAM {
 
     cv::Mat MapPoint::GetWorldPos()
 	{
-		std::unique_lock<std::mutex> lock(mMutexMP);
+		std::unique_lock<std::mutex> lock(mMutexPos);
 		return mWorldPos.clone();
 	}
 
     cv::Mat MapPoint::GetDescriptor()
 	{
-		std::unique_lock<std::mutex> lock(mMutexMP);
+		std::unique_lock<std::mutex> lock(mMutexPos);
 		return mDescriptor.clone();
 	}
 
-	float MapPoint::GetAngle(){
-	    std::unique_lock<std::mutex> lock(mMutexMP);
-	    return mfAngle;
-	}
-	int MapPoint::GetScale()
+    void MapPoint::UpdateNormalAndDepth()
     {
-        std::unique_lock<std::mutex> lock(mMutexMP);
-        return mnScale;
+        std::map<RefFrame*, size_t> observations;
+        RefFrame* pRefKF;
+        cv::Mat Pos;
+        {
+            std::unique_lock<std::mutex> lock(mMutexFeatures);
+            std::unique_lock<std::mutex> lock2(mMutexPos);
+
+            observations = mObservations;
+            pRefKF = mpRefKF;
+            Pos = mWorldPos.clone();
+        }
+
+        if (observations.empty())
+            return;
+
+        cv::Mat normal = cv::Mat::zeros(3, 1, CV_32F);
+        int n = 0;
+        for (auto mit = observations.begin(), mend = observations.end(); mit != mend; mit++)
+        {
+            RefFrame* pKF = mit->first;
+            cv::Mat Owi = pKF->GetCameraCenter();
+            cv::Mat normali = mWorldPos - Owi;
+            normal = normal + normali / cv::norm(normali);
+            n++;
+        }
+
+        cv::Mat PC = Pos - pRefKF->GetCameraCenter();
+        const float dist = cv::norm(PC);
+        const int level = pRefKF->mvKeysUn[observations[pRefKF]].octave;
+        const float levelScaleFactor = pRefKF->mvScaleFactors[level];
+        const int nLevels = pRefKF->mnScaleLevels;
+
+        {
+            std::unique_lock<std::mutex> lock(mMutexPos);
+            mfMaxDistance = dist*levelScaleFactor;
+            mfMinDistance = mfMaxDistance / pRefKF->mvScaleFactors[nLevels - 1];
+            mNormalVector = normal / n;
+        }
     }
-    int MapPoint::GetObservation()
+
+    float MapPoint::GetMinDistanceInvariance()
     {
-        std::unique_lock<std::mutex> lock(mMutexMP);
-        return mnObservation;
+        std::unique_lock<std::mutex> lock(mMutexPos);
+        return 0.8f*mfMinDistance;
     }
-    void MapPoint::Update(cv::Mat _pos, cv::Mat _desc, float _angle, int _scale, int _obs){
-        std::unique_lock<std::mutex> lock(mMutexMP);
-        mWorldPos = _pos.clone();
-        mDescriptor = _desc.clone();
-        mfAngle = _angle;
-        mnScale = _scale;
-        mnObservation = _obs;
+
+    float MapPoint::GetMaxDistanceInvariance()
+    {
+        std::unique_lock<std::mutex> lock(mMutexPos);
+        return 1.2f*mfMaxDistance;
     }
-    /*
+    cv::Mat MapPoint::GetNormal()
+    {
+        std::unique_lock<std::mutex> lock(mMutexPos);
+        return mNormalVector.clone();
+    }
+    int MapPoint::PredictScale(const float &currentDist, Frame* pF)
+    {
+        float ratio;
+        {
+            std::unique_lock<std::mutex> lock(mMutexPos);
+            ratio = mfMaxDistance / currentDist;
+        }
+
+        int nScale = ceil(log(ratio) / pF->mfLogScaleFactor);
+        if (nScale<0)
+            nScale = 0;
+        else if (nScale >= pF->mnScaleLevels)
+            nScale = pF->mnScaleLevels - 1;
+
+        return nScale;
+    }
+    int MapPoint::PredictScale(const float &currentDist, RefFrame* pF)
+    {
+        float ratio;
+        {
+            std::unique_lock<std::mutex> lock(mMutexPos);
+            ratio = mfMaxDistance / currentDist;
+        }
+
+        int nScale = ceil(log(ratio) / pF->mfLogScaleFactor);
+        if (nScale<0)
+            nScale = 0;
+        else if (nScale >= pF->mnScaleLevels)
+            nScale = pF->mnScaleLevels - 1;
+
+        return nScale;
+    }
+
 	void MapPoint::SetWorldPos(float x, float y, float z)
 	{
-		//std::unique_lock<std::mutex> lock2(mGlobalMutex);
 		std::unique_lock<std::mutex> lock(mMutexPos);
 		mWorldPos.at<float>(0) = x;
 		mWorldPos.at<float>(1) = y;
 		mWorldPos.at<float>(2) = z;
-	}
-
-
-
-
-	cv::Mat MapPoint::GetNormal()
-	{
-		std::unique_lock<std::mutex> lock(mMutexPos);
-		return mNormalVector.clone();
-	}
-
-	void MapPoint::SetReferenceFrame(RefFrame* pRef) {
-		std::unique_lock<std::mutex> lock(mMutexFeatures);
-		mpRefKF = pRef;
-	}
-
-	RefFrame* MapPoint::GetReferenceFrame()
-	{
-		std::unique_lock<std::mutex> lock(mMutexFeatures);
-		return mpRefKF;
 	}
 
 	void MapPoint::AddObservation(RefFrame* pKF, size_t idx)
@@ -112,7 +160,33 @@ namespace EdgeSLAM {
 					bBad = true;
 			}
 		}
+        if (bBad)
+			SetBadFlag();
+	}
 
+	void MapPoint::SetBadFlag()
+    {
+        std::map<RefFrame*, size_t> obs;
+        {
+            std::unique_lock<std::mutex> lock1(mMutexFeatures);
+            std::unique_lock<std::mutex> lock2(mMutexPos);
+            mbBad = true;
+            obs = mObservations;
+            mObservations.clear();
+        }
+        for (std::map<RefFrame*, size_t>::iterator mit = obs.begin(), mend = obs.end(); mit != mend; mit++)
+        {
+            RefFrame* pKF = mit->first;
+            pKF->EraseMapPointMatch(mit->second);
+        }
+
+        MAP->RemoveMapPoint(this->mnID);
+    }
+    bool MapPoint::isBad()
+	{
+		std::unique_lock<std::mutex> lock(mMutexFeatures);
+		std::unique_lock<std::mutex> lock2(mMutexPos);
+		return mbBad;
 	}
 	std::map<RefFrame*, size_t> MapPoint::GetObservations()
 	{
@@ -198,75 +272,5 @@ namespace EdgeSLAM {
 		std::unique_lock<std::mutex> lock(mMutexFeatures);
 		return (mObservations.count(pKF));
 	}
-	void MapPoint::UpdateNormalAndDepth()
-	{
-		std::map<RefFrame*, size_t> observations;
-		RefFrame* pRefKF;
-		cv::Mat Pos;
-		{
-			std::unique_lock<std::mutex> lock(mMutexFeatures);
-			std::unique_lock<std::mutex> lock2(mMutexPos);
-			
-			observations = mObservations;
-			pRefKF = mpRefKF;
-			Pos = mWorldPos.clone();
-		}
 
-		if (observations.empty())
-			return;
-
-		cv::Mat normal = cv::Mat::zeros(3, 1, CV_32F);
-		int n = 0;
-		for (auto mit = observations.begin(), mend = observations.end(); mit != mend; mit++)
-		{
-			RefFrame* pKF = mit->first;
-			cv::Mat Owi = pKF->GetCameraCenter();
-			cv::Mat normali = mWorldPos - Owi;
-			normal = normal + normali / cv::norm(normali);
-			n++;
-		}
-
-		cv::Mat PC = Pos - pRefKF->GetCameraCenter();
-		const float dist = cv::norm(PC);
-		const int level = pRefKF->mvKeysUn[observations[pRefKF]].octave;
-		const float levelScaleFactor = pRefKF->mvScaleFactors[level];
-		const int nLevels = pRefKF->mnScaleLevels;
-
-		{
-			std::unique_lock<std::mutex> lock(mMutexPos);
-			mfMaxDistance = dist*levelScaleFactor;
-			mfMinDistance = mfMaxDistance / pRefKF->mvScaleFactors[nLevels - 1];
-			mNormalVector = normal / n;
-		}
-	}
-
-	float MapPoint::GetMinDistanceInvariance()
-	{
-		std::unique_lock<std::mutex> lock(mMutexPos);
-		return 0.8f*mfMinDistance;
-	}
-
-	float MapPoint::GetMaxDistanceInvariance()
-	{
-		std::unique_lock<std::mutex> lock(mMutexPos);
-		return 1.2f*mfMaxDistance;
-	}
-	
-	int MapPoint::PredictScale(const float &currentDist, Frame* pF)
-	{
-		float ratio;
-		{
-			std::unique_lock<std::mutex> lock(mMutexPos);
-			ratio = mfMaxDistance / currentDist;
-		}
-
-		int nScale = ceil(log(ratio) / pF->mfLogScaleFactor);
-		if (nScale<0)
-			nScale = 0;
-		else if (nScale >= pF->mnScaleLevels)
-			nScale = pF->mnScaleLevels - 1;
-
-		return nScale;
-	}
-    */
 }

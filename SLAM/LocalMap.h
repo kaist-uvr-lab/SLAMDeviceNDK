@@ -15,14 +15,12 @@ namespace EdgeSLAM {
 	public:
 		LocalMap();
 		virtual ~LocalMap();
-    public:
-
 	public:
 		std::vector<MapPoint*> mvpMapPoints;
 		std::vector<TrackPoint*> mvpTrackPoints;
-		cv::Mat mvfAngles;
-		cv::Mat mvcScales;
-		cv::Mat mDescriptors;
+		//cv::Mat mvfAngles;
+		//cv::Mat mvcScales;
+		//cv::Mat mDescriptors;
 	};
 }
 

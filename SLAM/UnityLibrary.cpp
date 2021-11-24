@@ -17,8 +17,6 @@
 //���� https://darkstart.tistory.com/42
 extern "C" {
 
-
-
 	EdgeSLAM::Frame* pCurrFrame = nullptr;
 	EdgeSLAM::Frame* pPrevFrame = nullptr;
 	EdgeSLAM::Camera* pCamera;
@@ -33,15 +31,23 @@ extern "C" {
 	EdgeSLAM::ORBDetector* EdgeSLAM::Tracker::Detector;
 	EdgeSLAM::ORBDetector* EdgeSLAM::SearchPoints::Detector;
 	EdgeSLAM::ORBDetector* EdgeSLAM::MapPoint::Detector;
-	EdgeSLAM::ORBDetector* EdgeSLAM::Frame::detector;
 	EdgeSLAM::ORBDetector* EdgeSLAM::RefFrame::detector;
+	EdgeSLAM::ORBDetector* EdgeSLAM::Frame::detector;
 	EdgeSLAM::Map* EdgeSLAM::RefFrame::MAP;
+	EdgeSLAM::Map* EdgeSLAM::MapPoint::MAP;
 
     std::map<int, cv::Mat> mapContentInfos;
     std::mutex mMutexContentInfo;
 
+    //std::map<int, cv::Mat> mapObjectInfos;
+    cv::Mat ObjectInfo = cv::Mat::zeros(0,6,CV_32FC1);
+    std::mutex mMutexObjectInfo;
+
     std::string strPath;
 	int mnWidth, mnHeight;
+	int mnSkipFrame;
+	int mnFeature, mnLevel;
+	float mfScale;
 
     std::ifstream inFile;
     char x[1000];
@@ -54,10 +60,9 @@ extern "C" {
         ss << strPath << "/debug.txt";
         strLogFile = strPath+"/debug.txt";
 
-        //freopen(strLogFile.c_str(), "w", stdout);
-        //ofile.open(strLogFile.c_str(), std::ios::trunc);
-        //ofile<<"start\n";
-        //ofile.close();
+        ofile.open(strLogFile.c_str(), std::ios::trunc);
+        ofile<<"start\n";
+        ofile.close();
     }
 
     std::map<std::string, cv::Mat> UnityData;
@@ -80,11 +85,15 @@ extern "C" {
         pVoc = new DBoW3::Vocabulary();
         pVoc->load(strVoc);
     }
-    void SetInit(int _w, int _h, float _fx, float _fy, float _cx, float _cy, float _d1, float _d2, float _d3, float _d4, int nfeature, int nlevel, float fscale) {//char* vocName,
+    void SetInit(int _w, int _h, float _fx, float _fy, float _cx, float _cy, float _d1, float _d2, float _d3, float _d4, int nfeature, int nlevel, float fscale, int nSkip) {//char* vocName,
 
 		mnWidth  = _w;
 		mnHeight = _h;
+        mnSkipFrame = nSkip;
 
+        mnFeature = nfeature;
+        mnLevel = nlevel;
+        mfScale = fscale;
 
         pDetector = new EdgeSLAM::ORBDetector(nfeature,fscale,nlevel);
         pCamera = new EdgeSLAM::Camera(_w, _h, _fx, _fy, _cx, _cy, _d1, _d2, _d3, _d4);
@@ -107,7 +116,6 @@ extern "C" {
         EdgeSLAM::Tracker::Detector = pDetector;
         EdgeSLAM::SearchPoints::Detector = pDetector;
         EdgeSLAM::Frame::detector = pDetector;
-        EdgeSLAM::RefFrame::detector = pDetector;
         EdgeSLAM::MapPoint::Detector = pDetector;
         //EdgeSLAM::RefFrame::MapPoints = mapMapPoints;
 
@@ -131,10 +139,11 @@ extern "C" {
         pMotionModel = new EdgeSLAM::MotionModel();
         EdgeSLAM::Tracker::Detector = pDetector;
         EdgeSLAM::SearchPoints::Detector = pDetector;
-        EdgeSLAM::Frame::detector = pDetector;
         EdgeSLAM::RefFrame::detector = pDetector;
+        EdgeSLAM::Frame::detector = pDetector;
         EdgeSLAM::MapPoint::Detector = pDetector;
         EdgeSLAM::RefFrame::MAP = pMap;
+        EdgeSLAM::MapPoint::MAP = pMap;
 
         //EdgeSLAM::LocalMap::logFile = strLogFile;
         //EdgeSLAM::RefFrame::MapPoints = mapMapPoints;
@@ -152,137 +161,106 @@ extern "C" {
 	}
 
     int SetFrame(void* data, int id, double ts, float& t1, float& t2) {
+        //ofile.open(strLogFile.c_str(), std::ios_base::out | std::ios_base::app);
+        std::chrono::high_resolution_clock::time_point start = std::chrono::high_resolution_clock::now();
 
         cv::Mat gray;
         bool res = true;
-
         cv::Mat frame = cv::Mat(mnHeight, mnWidth, CV_8UC4, data);
         cv::cvtColor(frame, frame, cv::COLOR_BGRA2RGBA);
         cv::flip(frame, frame,0);
         cv::cvtColor(frame, gray, cv::COLOR_RGBA2GRAY);//COLOR_BGRA2GRAY
 
-        std::chrono::high_resolution_clock::time_point start = std::chrono::high_resolution_clock::now();
+        /*
+        std::stringstream ss;
+        ss<<strPath<<"/color.jpg";
+        cv::imwrite(ss.str(), frame);
+        ss.str("");
+        ss<<strPath<<"/gray.jpg";
+        cv::imwrite(ss.str(), gray);
+        */
+
+        if(id % mnSkipFrame == 0){
+            pMap->AddImage(gray.clone(), id);
+        }
+
         pPrevFrame = pCurrFrame;
         pCurrFrame = new EdgeSLAM::Frame(gray, pCamera, id);
         pCurrFrame->logfile = strLogFile;
 
         std::chrono::high_resolution_clock::time_point end = std::chrono::high_resolution_clock::now();
-
-        auto du_test1 = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
-        float t_test1 = du_test1 / 1000.0;
-        t1 = t_test1;
+        auto du_total = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+        float t_total = du_total / 1000.0;
+        t1 = t_total;
         t2 = 0.0;
-
+        //ofile<<"SetFrame="<<t_total<<std::endl;
+        //ofile.close();
         return pCurrFrame->N;
     }
     void SetLocalMap(){
 
-        EdgeSLAM::LocalMap* pLocal = new EdgeSLAM::LocalMap();
-        ////reference frame
-        cv::Mat localdesc = GetDataFromUnity("LocalMap");
-        cv::Mat localscales = GetDataFromUnity("LocalMapScales");
-        cv::Mat localangles = GetDataFromUnity("LocalMapAngles");
-        cv::Mat localpoints = GetDataFromUnity("LocalMapPoints");
-        cv::Mat localids = GetDataFromUnity("LocalMapPointIDs");
-        cv::Mat tempObs = GetDataFromUnity("LocalMapPointObservation");
-        ////reference frame
-
-        //create map points
-        int Nmp = localpoints.rows/12;
-        int Ndesc = localdesc.rows/32;
-        int Nscale = localscales.rows;
-        int Nangle = localangles.rows/4;
-        int Nid = localids.rows/4;
-
-        cv::Mat tempPoints(Nmp, 3, CV_32FC1, localpoints.data);
-        cv::Mat tempDescs(Ndesc, 32, CV_8UC1, localdesc.data);
-        cv::Mat tempScales(Nscale, 1, CV_8UC1, localscales.data);
-        cv::Mat tempAngles(Nangle, 1, CV_32FC1, localpoints.data);
-        cv::Mat tempIDs(Nid, 1, CV_32SC1, localids.data);
-
-        for(int i = 0; i < Nmp; i++)
-        {
-            int id = tempIDs.at<int>(i,0);
-            EdgeSLAM::MapPoint* pMP = nullptr;
-            if(pMap->CheckMapPoint(id))
-            {
-                pMP = pMap->GetMapPoint(id);
-            }else{
-                pMP = new EdgeSLAM::MapPoint(id, tempPoints.at<float>(i,0), tempPoints.at<float>(i,1), tempPoints.at<float>(i,2));
-                pMap->AddMapPoint(id, pMP);
-            }
-            ////update map point
-            int scale = tempScales.at<uchar>(i,0);
-            cv::Mat pos = tempPoints.row(i).clone();
-            float angle = tempAngles.at<float>(i,0);
-            cv::Mat desc = tempDescs.row(i).clone();
-            int obs = tempObs.at<uchar>(i,0);
-            pMP->Update(pos.t(), desc, angle, scale, obs);
-
-            //create track point
-            auto pTP = new EdgeSLAM::TrackPoint();
-
-            pLocal->mvpMapPoints.push_back(pMP);
-            pLocal->mvpTrackPoints.push_back(pTP);
-
-        }
-        pMap->SetLocalMap(pLocal);
-
-        //create map points
-
-        //auto pLocalMap = new
-        /*
-        cv::Mat points(len1/12, 3, CV_32FC1, data1);
-        cv::Mat descs(len2/32, 32, CV_8UC1, data2);
-        cv::Mat scales(len3, 1, CV_8UC1, data3);
-        cv::Mat angles(len4/4, 1, CV_32FC1, data4);
-        ofile.open(strLogFile.c_str(), std::ios_base::out | std::ios_base::app);
-        ofile<<len1/12<<" "<<len2/32<<" "<<len3<<" "<<len4/4<<std::endl;
-        ofile.close();
-        */
-        /*
-        ofile.open(strLogFile.c_str(), std::ios_base::out | std::ios_base::app);
-        ofile<<Nmp<<" "<<Ndesc<<" "<<Nscale<<" "<<Nangle<<" "<<Nid<<"="<<localids.rows<<std::endl;
-        ofile.close();
-        */
     }
 
-    void SetReferenceFrame() {
-        ////id는 서버에 보낸 이미지의 id가 기록 됨
-
+    void SetReferenceFrame(int id) {
         ////reference frame
+        ofile.open(strLogFile.c_str(), std::ios_base::out | std::ios_base::app);
+        std::chrono::high_resolution_clock::time_point start = std::chrono::high_resolution_clock::now();
         cv::Mat f1 = GetDataFromUnity("ReferenceFrame");
-        cv::Mat refdesc = GetDataFromUnity("ReferenceFrameDesc");
-        cv::Mat desc(refdesc.rows/32,32,CV_8UC1, refdesc.data);
-        auto pRefFrame = new EdgeSLAM::RefFrame(pCamera, desc, (float*)f1.data);
+        auto pRefFrame = new EdgeSLAM::RefFrame(pCamera, (float*)f1.data);
+        EdgeSLAM::ORBDetector* detector = new EdgeSLAM::ORBDetector(mnFeature,mfScale,mnLevel);
+        cv::Mat img = pMap->GetImage(id);
+        detector->Compute(img, cv::Mat(), pRefFrame->mvKeys, pRefFrame->mDescriptors);
         std::vector<cv::Mat> vCurrentDesc = Utils::toDescriptorVector(pRefFrame->mDescriptors);
 		pVoc->transform(vCurrentDesc, pRefFrame->mBowVec, pRefFrame->mFeatVec, 4);
+        pRefFrame->UpdateMapPoints();
 
-        //pTracker->mnLastKeyFrameId = id;
-		pMap->SetReferenceFrame(pRefFrame);
+        ////local map 갱신
+        EdgeSLAM::LocalMap* pLocal = new EdgeSLAM::LocalMap();
+        std::set<EdgeSLAM::MapPoint*> spMPs;
+        int nkf = 0;
+        EdgeSLAM::RefFrame* ref = nullptr;
+        for(ref = pRefFrame; ref; ref = ref->mpParent, nkf++){
+            if(!ref || nkf >= 8){
+                break;
+            }
+            auto vpMPs = ref->mvpMapPoints;
+            for(int i =0; i < ref->N; i++){
+                auto pMP = vpMPs[i];
+                if(!pMP || spMPs.count(pMP)){
+                    continue;
+                }
+                auto pTP = new EdgeSLAM::TrackPoint();
+                if(pRefFrame->is_in_frustum(pMP, pTP,0.5)){
+                    pLocal->mvpMapPoints.push_back(pMP);
+                    pLocal->mvpTrackPoints.push_back(pTP);
+                    spMPs.insert(pMP);
+                }
+            }
+        }
+        ////delete ref frame
+        while(ref){
+            auto kf = ref;
+            ref = ref->mpParent;
+            delete kf;
+            if(!ref)
+            break;
+        }
 
-        /*
-		float res = -.0;
-		ofile.open(strLogFile.c_str(), std::ios_base::out | std::ios_base::app);
-        ofile<<pRefFrame->N<<std::endl;
-        ofile.close();
-        */
+        pMap->SetReferenceFrame(pRefFrame);
+        pMap->SetLocalMap(pLocal);
 
-        /*
-		//int nKFs = pMap->mmpRefFrames.size();
-		//if (nKFs == 0 ||pTracker->NeedNewKeyFrame(ref, pRefFrame, nKFs, pRefFrame->N)) {
-		pMap->mmpRefFrames[pRefFrame->mnId] = pRefFrame;
-		pRefFrame->UpdateMapPoints();
-		pRefFrame->UpdateConnections();
-		pTracker->mnLastKeyFrameId = id;
-		pMap->SetReferenceFrame(pRefFrame);
-		//update map points
-		//udpate connection
-		//addkeyframe in map
-		//}
-		*/
+        std::chrono::high_resolution_clock::time_point end = std::chrono::high_resolution_clock::now();
+        auto du_total = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+        float t_total = du_total / 1000.0;
+        //ofile<<"SetReference="<<t_total<<std::endl;
+        //ofile.close();
 	}
-
+    void AddObjectInfos(){
+        std::unique_lock<std::mutex> lock(mMutexObjectInfo);
+        cv::Mat tdata = GetDataFromUnity("ObjectDetection");
+        int n = tdata.rows/24;
+        ObjectInfo = cv::Mat(n, 6, CV_32FC1, tdata.data);
+    }
 
 	void AddContentInfo(int id, float x, float y, float z) {
 		cv::Mat pos = (cv::Mat_<float>(3, 1) <<x, y, z);
@@ -291,6 +269,8 @@ extern "C" {
 	}
 
 	bool Track(void* data) {
+        ofile.open(strLogFile.c_str(), std::ios_base::out | std::ios_base::app);
+        std::chrono::high_resolution_clock::time_point start = std::chrono::high_resolution_clock::now();
 
 		bool bTrack = false;
 		int nMatch = -1;
@@ -308,9 +288,7 @@ extern "C" {
 				if (bTrack) {
 					pTracker->mnLastRelocFrameId = pCurrFrame->mnFrameID;
 				}
-				ofile.open(strLogFile.c_str(), std::ios_base::out | std::ios_base::app);
-                ofile<<"ref matching = "<<nMatch<<" "<<rf->mDescriptors.rows<<" "<<rf->mvpMapPoints.size()<<" "<<rf->N<<"\n";
-                ofile.close();
+                //ofile<<"ref matching = "<<nMatch<<" "<<rf->mDescriptors.rows<<" "<<rf->mvpMapPoints.size()<<" "<<rf->N<<"\n";
 			}
 		}
 		if (pTracker->mTrackState == EdgeSLAM::TrackingState::Success) {
@@ -343,13 +321,14 @@ extern "C" {
 		}
 		if (bTrack) {
 			//local map
-			auto pLocal = pMap->GetLocalMap();
+			//ofile<<"local map matching = start"<<std::endl;
+			EdgeSLAM::LocalMap* pLocal = new EdgeSLAM::LocalMap();
+			//ofile<<"local map matching = 1"<<std::endl;
+			pMap->GetLocalMap(pLocal);
+			//ofile<<"local map matching = 2 = "<<pLocal->mvpMapPoints.size()<<" "<<pLocal->mvpTrackPoints.size()<<std::endl;
 			nMatch = 4;
 			nMatch = pTracker->TrackWithLocalMap(pCurrFrame, pLocal, 100.0, 50.0);
-
-            ofile.open(strLogFile.c_str(), std::ios_base::out | std::ios_base::app);
-            ofile<<"local map matching = "<<nMatch<<"\n";
-            ofile.close();
+            //ofile<<"local map matching = "<<nMatch<<"\n";
 
 			if (pCurrFrame->mnFrameID < pTracker->mnLastRelocFrameId + 30 && nMatch < 30) {
 				bTrack = false;
@@ -378,8 +357,12 @@ extern "C" {
 		}
 		R.push_back(t.t());
 		memcpy(data, R.data, sizeof(float) * 12);
-		//printf("Track::end=%d : %d, %d\n", pCurrFrame->mnFrameID, nMatch, bTrack);
 
+        std::chrono::high_resolution_clock::time_point end = std::chrono::high_resolution_clock::now();
+        auto du_total = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+        float t_total = du_total / 1000.0;
+        ofile<<"Tracking="<<t_total<<std::endl;
+        ofile.close();
 		return bTrack;
 	}
 
@@ -398,16 +381,44 @@ extern "C" {
         cv::cvtColor(img, img, cv::COLOR_BGRA2RGBA);
         cv::flip(img, img,0);
 
+        cv::Mat obj;
+        {
+            std::unique_lock<std::mutex> lock(mMutexObjectInfo);
+            obj = ObjectInfo.clone();
+        }
+
+        for(int j = 0, jend = obj.rows; j < jend ;j++){
+            cv::Point2f left(obj.at<float>(j, 2), mnHeight-obj.at<float>(j, 3));
+            cv::Point2f right(obj.at<float>(j, 4), mnHeight-obj.at<float>(j, 5));
+            cv::rectangle(img,left, right, cv::Scalar(255, 255, 255, 255));
+        }
+
 		if (pTracker->mTrackState == EdgeSLAM::TrackingState::Success) {
 
 			for (int i = 0; i < pCurrFrame->N; i++) {
-				if (!pCurrFrame->mvpMapPoints[i] || pCurrFrame->mvbOutliers[i])
-					continue;
 				auto pt = pCurrFrame->mvKeys[i].pt;
-				pt.y = mnHeight -pt.y;
-				cv::circle(img, pt, 2, cv::Scalar(255, 255, 0, 255), -1);
+                pt.y = mnHeight -pt.y;
+                cv::circle(img, pt, 1, cv::Scalar(255, 0, 0, 255), -1);
+				//if (!pCurrFrame->mvpMapPoints[i] || pCurrFrame->mvbOutliers[i])
+				//	continue;
+				//auto pt = pCurrFrame->mvKeys[i].pt;
+				//pt.y = mnHeight -pt.y;
+				//cv::circle(img, pt, 2, cv::Scalar(255, 255, 0, 255), -1);
 			}
+            /*
+            cv::Mat obj;
+            {
+                std::unique_lock<std::mutex> lock(mMutexObjectInfo);
+                obj = ObjectInfo.clone();
+            }
 
+            for(int j = 0, jend = obj.rows; j < jend ;j++){
+                cv::Point2f left(obj.at<float>(j, 2), mnHeight-obj.at<float>(j, 3));
+                cv::Point2f right(obj.at<float>(j, 4), mnHeight-obj.at<float>(j, 5));
+                cv::rectangle(img,left, right, cv::Scalar(255, 255, 255, 255));
+            }
+            */
+            /*
 			std::map<int, cv::Mat> tempInfos;
 			{
 				std::unique_lock<std::mutex> lock(mMutexContentInfo);
@@ -426,10 +437,19 @@ extern "C" {
 				cv::Point2f pt(temp.at<float>(0) / depth, mnHeight-temp.at<float>(1) / depth);
 				cv::circle(img, pt, 3, cv::Scalar(255, 0, 255, 0), -1);
 			}
+			*/
 		}
 		//cv::flip(img, img, 0);
+
 		cv::cvtColor(img, img, cv::COLOR_RGBA2BGRA);
 		memcpy(data, img.data, sizeof(cv::Vec4b) * img.rows * img.cols);
+
+        /*
+        std::stringstream ss;
+        ss<<strPath<<"/color.jpg";
+        cv::imwrite(ss.str(), img);
+        */
+
 		return true;
     }
 }

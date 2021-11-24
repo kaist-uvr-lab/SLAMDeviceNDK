@@ -10,6 +10,7 @@ namespace EdgeSLAM {
 	class RefFrame;
 	class Frame;
 	class ORBDetector;
+	class Map;
 	class TrackPoint {
 	public:
 		TrackPoint();
@@ -34,25 +35,17 @@ namespace EdgeSLAM {
 		virtual ~MapPoint();
 
 	public:
-
-		//void SetWorldPos(float x, float y, float z);
+		void SetWorldPos(float x, float y, float z);
 		cv::Mat GetWorldPos();
 		cv::Mat GetDescriptor();
-        int GetScale();
-        float GetAngle();
-        int GetObservation();
-        void Update(cv::Mat _pos, cv::Mat _desc, float _angle, int _scale, int _obs);
-     private:
-        std::mutex mMutexMP;
-        cv::Mat mWorldPos, mDescriptor;
-        float mfAngle;
-        int mnScale;
+        void UpdateNormalAndDepth();
         RefFrame* mpRefKF;
-        int mnObservation;
+
     public:
 	    int mnID;
 		static ORBDetector* Detector;
-        /*
+        static Map* MAP;
+
 		cv::Mat GetNormal();
 		std::map<RefFrame*, size_t> GetObservations();
 		int Observations();
@@ -60,30 +53,27 @@ namespace EdgeSLAM {
 		void EraseObservation(RefFrame* pKF);
 		void ComputeDistinctiveDescriptors();
 
-
-		void UpdateNormalAndDepth();
 		float GetMinDistanceInvariance();
 		float GetMaxDistanceInvariance();
 		int PredictScale(const float &currentDist, Frame* pF);
+		int PredictScale(const float &currentDist, RefFrame* pKF);
 
 		bool IsInKeyFrame(RefFrame *pKF);
-		void SetReferenceFrame(RefFrame* pRef);
-		RefFrame* GetReferenceFrame();
-
+        void SetBadFlag();
+        bool isBad();
 	private:
 		cv::Mat mWorldPos, mNormalVector;
 		std::map<RefFrame*, size_t> mObservations;
 		cv::Mat mDescriptor;
-		
 
 		int nObs;
-
+        bool mbBad;
 		float mfMinDistance;
 		float mfMaxDistance;
 
 		std::mutex mMutexPos;
 		std::mutex mMutexFeatures;
-		*/
+
 	};
 }
 #endif

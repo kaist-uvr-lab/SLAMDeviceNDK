@@ -5,5 +5,9 @@
 
 namespace EdgeSLAM {
 	LocalMap::LocalMap() {}
-	LocalMap::~LocalMap() {}
+	LocalMap::~LocalMap() {
+	    //mvfAngles.release();
+	    //mvcScales.release();
+	    //mDescriptors.release();
+	}
 }
