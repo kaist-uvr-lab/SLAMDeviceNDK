@@ -16,6 +16,7 @@ namespace EdgeSLAM {
 	public:
 		static const int HISTO_LENGTH;
 		static ORBDetector* Detector;
+		static int SearchFrameByProjection(RefFrame* ref, Frame* curr, float thMaxDesc = 100.0, float thMinDesc = 50.0, float thProjection = 15, bool bCheckOri = true);
 		static int SearchFrameByProjection(Frame* prev, Frame* curr, float thMaxDesc = 100.0, float thMinDesc = 50.0, float thProjection = 15, bool bCheckOri = true);
 		static int SearchMapByProjection(Frame *F, const std::vector<MapPoint*> &vpMapPoints, const std::vector<TrackPoint*> &vpTrackPoints, float thMaxDesc = 100.0, float thMinDesc = 50.0, float thRadius = 1.0, float thMatchRatio = 0.8, bool bCheckOri = true);
 		static int SearchFrameByBoW(RefFrame* pKF, Frame *F, std::vector<MapPoint*> &vpMapPointMatches, float thMinDesc = 50.0, float thMatchRatio = 0.7, bool bCheckOri = true);

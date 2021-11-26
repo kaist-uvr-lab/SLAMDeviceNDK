@@ -210,8 +210,8 @@ extern "C" {
         EdgeSLAM::ORBDetector* detector = new EdgeSLAM::ORBDetector(mnFeature,mfScale,mnLevel);
         cv::Mat img = pMap->GetImage(id);
         detector->Compute(img, cv::Mat(), pRefFrame->mvKeys, pRefFrame->mDescriptors);
-        std::vector<cv::Mat> vCurrentDesc = Utils::toDescriptorVector(pRefFrame->mDescriptors);
-		pVoc->transform(vCurrentDesc, pRefFrame->mBowVec, pRefFrame->mFeatVec, 4);
+        //std::vector<cv::Mat> vCurrentDesc = Utils::toDescriptorVector(pRefFrame->mDescriptors);
+		//pVoc->transform(vCurrentDesc, pRefFrame->mBowVec, pRefFrame->mFeatVec, 4);
         pRefFrame->UpdateMapPoints();
 
         ////local map 갱신
@@ -279,10 +279,9 @@ extern "C" {
 			EdgeSLAM::RefFrame* rf = pMap->GetReferenceFrame();
 
 			if (rf) {
-				std::vector<cv::Mat> vCurrentDesc = Utils::toDescriptorVector(pCurrFrame->mDescriptors);
-				pVoc->transform(vCurrentDesc, pCurrFrame->mBowVec, pCurrFrame->mFeatVec, 4);
-
-				nMatch = pTracker->TrackWithReferenceFrame(rf, pCurrFrame);
+				//std::vector<cv::Mat> vCurrentDesc = Utils::toDescriptorVector(pCurrFrame->mDescriptors);
+				//pVoc->transform(vCurrentDesc, pCurrFrame->mBowVec, pCurrFrame->mFeatVec, 4);
+				nMatch = pTracker->TrackWithReferenceFrame(rf, pCurrFrame, 100.0, 50.0);
 				bTrack = nMatch >= 10;
 
 				if (bTrack) {
@@ -311,10 +310,9 @@ extern "C" {
 			if (!bTrack) {
 				EdgeSLAM::RefFrame* rf = pMap->GetReferenceFrame();
 				if (rf) {
-					std::vector<cv::Mat> vCurrentDesc = Utils::toDescriptorVector(pCurrFrame->mDescriptors);
-					pVoc->transform(vCurrentDesc, pCurrFrame->mBowVec, pCurrFrame->mFeatVec, 4);
-
-					nMatch = pTracker->TrackWithReferenceFrame(rf, pCurrFrame);
+					//std::vector<cv::Mat> vCurrentDesc = Utils::toDescriptorVector(pCurrFrame->mDescriptors);
+					//pVoc->transform(vCurrentDesc, pCurrFrame->mBowVec, pCurrFrame->mFeatVec, 4);
+					nMatch = pTracker->TrackWithReferenceFrame(rf, pCurrFrame, 100.0, 50.0);
 					bTrack = nMatch >= 10;
 				}
 			}

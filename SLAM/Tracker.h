@@ -25,7 +25,7 @@ namespace EdgeSLAM {
 		static ORBDetector* Detector;
 		int TrackWithPrevFrame(Frame* prev, Frame* cur, float thMaxDesc, float thMinDesc);
 		int TrackWithLocalMap(Frame* cur, LocalMap* pLocal, float thMaxDesc, float thMinDesc);
-		int TrackWithReferenceFrame(RefFrame* ref, Frame* cur);
+		int TrackWithReferenceFrame(RefFrame* ref, Frame* cur, float thMaxDesc, float thMinDesc);
 
 		int DiscardOutliers(Frame* cur);
 		int UpdateVisiblePoints(Frame* cur, std::vector<MapPoint*> vpLocalMPs, std::vector<TrackPoint*> vpLocalTPs);

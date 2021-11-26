@@ -27,34 +27,33 @@ namespace EdgeSLAM {
 		//int nmatchesMap = DiscardOutliers(cur);
 		return nopt;
 	}
-	int Tracker::TrackWithReferenceFrame(RefFrame* ref, Frame* cur) {
+	int Tracker::TrackWithReferenceFrame(RefFrame* ref, Frame* cur, float thMaxDesc, float thMinDesc) {
 
 		cur->reset_map_points();
 
+        cur->SetPose(ref->GetPose());
+        int res = SearchPoints::SearchFrameByProjection(ref, cur, thMaxDesc, thMinDesc);
+
+        if (res < 20) {
+            cur->reset_map_points();
+            res = SearchPoints::SearchFrameByProjection(ref, cur, thMaxDesc, thMinDesc, 30.0);
+        }
+        if (res < 20) {
+            return res;
+        }
+
+        /*
+        //prev version
 		std::vector<EdgeSLAM::MapPoint*> vpMapPointMatches;
 		int nMatch = EdgeSLAM::SearchPoints::SearchFrameByBoW(ref, cur, vpMapPointMatches);
 		if (nMatch < 10)
 			return nMatch;
-
 		cur->SetPose(ref->GetPose());
 		cur->mvpMapPoints = vpMapPointMatches;
-		
-		/*freopen("debug.txt", "a", stdout);
-		cv::Mat pose = cur->GetPose();
-		printf("Before %d ref = %f %f %f\n%f %f %f \n%f %f %f\n%f %f %f\n", ref->mnId,
-			pose.at<float>(0, 0), pose.at<float>(0, 1), pose.at<float>(0, 2),
-			pose.at<float>(1, 0), pose.at<float>(1, 1), pose.at<float>(1, 2),
-			pose.at<float>(2, 0), pose.at<float>(2, 1), pose.at<float>(2, 2),
-			pose.at<float>(0, 3), pose.at<float>(1, 3), pose.at<float>(2, 3));*/
+		//prev version
+		*/
+
 		int nopt = EdgeSLAM::Optimizer::PoseOptimization(cur);
-		//int nmatchesMap = DiscardOutliers(cur);
-		/*pose = cur->GetPose();
-		printf("after ref = %f %f %f\n%f %f %f \n%f %f %f\n%f %f %f\n",
-			pose.at<float>(0, 0), pose.at<float>(0, 1), pose.at<float>(0, 2),
-			pose.at<float>(1, 0), pose.at<float>(1, 1), pose.at<float>(1, 2),
-			pose.at<float>(2, 0), pose.at<float>(2, 1), pose.at<float>(2, 2),
-			pose.at<float>(0, 3), pose.at<float>(1, 3), pose.at<float>(2, 3));
-		printf("ref matching %d %d\n", nMatch, nopt);*/
 		return nopt;
 	}
 	int Tracker::TrackWithLocalMap(Frame* cur, LocalMap* pLocal, float thMaxDesc, float thMinDesc) {
