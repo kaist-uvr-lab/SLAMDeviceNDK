@@ -147,7 +147,7 @@ namespace EdgeSLAM {
 			 nTrial++;
 
 			 // Project (this fills MapPoint variables for matching)
-			 //if (cur->is_in_frustum(pMP, pTP, 0.5))
+			 if (cur->is_in_frustum(pMP, pTP, 0.5))
 			 {
 				 nToMatch++;
 			 }

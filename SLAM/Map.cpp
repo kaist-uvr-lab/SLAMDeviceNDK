@@ -12,7 +12,6 @@ namespace EdgeSLAM {
 
 	void Map::SetReferenceFrame(RefFrame* pRef){
 		std::unique_lock<std::mutex> lock(mMutexRefFrame);
-		pRef->mpParent = mpRefFrame;
 		mpRefFrame = pRef;
 	}
 

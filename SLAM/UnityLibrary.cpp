@@ -212,7 +212,10 @@ extern "C" {
         detector->Compute(img, cv::Mat(), pRefFrame->mvKeys, pRefFrame->mDescriptors);
         //std::vector<cv::Mat> vCurrentDesc = Utils::toDescriptorVector(pRefFrame->mDescriptors);
 		//pVoc->transform(vCurrentDesc, pRefFrame->mBowVec, pRefFrame->mFeatVec, 4);
+		pRefFrame->logfile = strLogFile;
         pRefFrame->UpdateMapPoints();
+        auto pPrefRef = pMap->GetReferenceFrame();
+        pRefFrame->mpParent = pPrefRef;
 
         ////local map 갱신
         EdgeSLAM::LocalMap* pLocal = new EdgeSLAM::LocalMap();
@@ -220,7 +223,7 @@ extern "C" {
         int nkf = 0;
         EdgeSLAM::RefFrame* ref = nullptr;
         for(ref = pRefFrame; ref; ref = ref->mpParent, nkf++){
-            if(!ref || nkf >= 8){
+            if(!ref || nkf >= 5){
                 break;
             }
             auto vpMPs = ref->mvpMapPoints;
@@ -230,20 +233,30 @@ extern "C" {
                     continue;
                 }
                 auto pTP = new EdgeSLAM::TrackPoint();
-                if(pRefFrame->is_in_frustum(pMP, pTP,0.5)){
+                 if(pRefFrame->is_in_frustum(pMP, pTP,0.5)){
                     pLocal->mvpMapPoints.push_back(pMP);
                     pLocal->mvpTrackPoints.push_back(pTP);
                     spMPs.insert(pMP);
                 }
             }
         }
+
         ////delete ref frame
         while(ref){
             auto kf = ref;
             ref = ref->mpParent;
-            delete kf;
+            kf->mpParent = nullptr;
+             auto vpMPs = kf->mvpMapPoints;
+            for(int i =0; i < kf->N; i++){
+                auto pMP = vpMPs[i];
+                if(!pMP || pMP->isBad()){
+                    continue;
+                }
+                pMP->EraseObservation(kf);
+            }
+
             if(!ref)
-            break;
+                break;
         }
 
         pMap->SetReferenceFrame(pRefFrame);

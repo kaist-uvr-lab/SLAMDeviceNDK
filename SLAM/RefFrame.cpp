@@ -120,7 +120,20 @@ namespace EdgeSLAM {
     }
 
 	RefFrame::~RefFrame() {
-
+	    /*
+	    std::ofstream ofile;
+        ofile.open(logfile.c_str(), std::ios_base::out | std::ios_base::app);
+        ofile<<"delete kf"<<std::endl;
+        for (size_t i = 0; i<mvpMapPoints.size(); i++)
+		{
+            MapPoint* pMP = mvpMapPoints[i];
+			if (pMP && !pMP->isBad())
+			{
+                pMP->EraseObservation(this);
+			}
+		}
+        ofile.close();
+        */
 	}
 
     void RefFrame::UpdateMapPoints(){
@@ -128,7 +141,7 @@ namespace EdgeSLAM {
 		for (size_t i = 0; i<mvpMapPoints.size(); i++)
 		{
 			MapPoint* pMP = mvpMapPoints[i];
-			if (pMP)
+			if (pMP && !pMP->isBad())
 			{
 				if (!pMP->IsInKeyFrame(this))
 				{
