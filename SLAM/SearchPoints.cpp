@@ -14,8 +14,7 @@ namespace EdgeSLAM {
 
         // Rotation Histogram (to check rotation consistency)
         std::vector<int> rotHist[HISTO_LENGTH];
-        for (int i = 0; i<HISTO_LENGTH; i++)
-            rotHist[i].reserve(500);
+
         const float factor = 1.0f / HISTO_LENGTH;
         cv::Mat Tcw = curr->GetPose();
         const cv::Mat Rcw = Tcw.rowRange(0, 3).colRange(0, 3);
@@ -135,8 +134,10 @@ namespace EdgeSLAM {
 
 		// Rotation Histogram (to check rotation consistency)
 		std::vector<int> rotHist[HISTO_LENGTH];
+		/*
 		for (int i = 0; i<HISTO_LENGTH; i++)
 			rotHist[i].reserve(500);
+		*/
 		const float factor = 1.0f / HISTO_LENGTH;
 		cv::Mat Tcw = curr->GetPose();
 		const cv::Mat Rcw = Tcw.rowRange(0, 3).colRange(0, 3);
@@ -338,8 +339,6 @@ namespace EdgeSLAM {
 		int nmatches = 0;
 
 		std::vector<int> rotHist[HISTO_LENGTH];
-		for (int i = 0; i<HISTO_LENGTH; i++)
-			rotHist[i].reserve(500);
 		const float factor = 1.0f / HISTO_LENGTH;
 
 		// We perform the matching over ORB that belong to the same vocabulary node (at a certain level)

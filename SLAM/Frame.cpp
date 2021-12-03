@@ -6,7 +6,29 @@
 
 namespace EdgeSLAM {
 	Frame::Frame() {}
-	Frame::~Frame(){}
+	Frame::~Frame(){
+
+        for (int i = 0; i < FRAME_GRID_COLS; i++)
+        {
+            for (int j = 0; j < FRAME_GRID_ROWS; j++)
+            {
+                std::vector<size_t>().swap(mGrid[i][j]);
+            }
+            delete[] mGrid[i];
+        }
+        delete[] mGrid;
+
+        std::vector<float>().swap(mvScaleFactors);
+        std::vector<float>().swap(mvInvScaleFactors);
+        std::vector<float>().swap(mvLevelSigma2);
+        std::vector<float>().swap(mvInvLevelSigma2);
+        std::vector<cv::KeyPoint>().swap(mvKeys);
+        std::vector<cv::KeyPoint>().swap(mvKeysUn);
+        std::vector<MapPoint*>().swap(mvpMapPoints);
+        std::set<MapPoint*>().swap(mspMapPoints);
+        std::vector<bool>().swap(mvbOutliers);
+
+	}
 	Frame::Frame(cv::Mat img, Camera* pCam, int id, double time_stamp) :mnFrameID(id), mdTimeStamp(time_stamp), mpCamera(pCam),
 		K(pCam->K), D(pCam->D), fx(pCam->fx), fy(pCam->fy), cx(pCam->cx), cy(pCam->cy), invfx(pCam->invfx), invfy(pCam->invfy), mnMinX(pCam->u_min), mnMaxX(pCam->u_max), mnMinY(pCam->v_min), mnMaxY(pCam->v_max), mfGridElementWidthInv(pCam->mfGridElementWidthInv), mfGridElementHeightInv(pCam->mfGridElementHeightInv), FRAME_GRID_COLS(pCam->mnGridCols), FRAME_GRID_ROWS(pCam->mnGridRows), mbDistorted(pCam->bDistorted),
 		mnScaleLevels(detector->mnScaleLevels), mfScaleFactor(detector->mfScaleFactor), mfLogScaleFactor(detector->mfLogScaleFactor), mvScaleFactors(detector->mvScaleFactors), mvInvScaleFactors(detector->mvInvScaleFactors), mvLevelSigma2(detector->mvLevelSigma2), mvInvLevelSigma2(detector->mvInvLevelSigma2)
@@ -158,7 +180,7 @@ namespace EdgeSLAM {
 
 	std::vector<size_t> Frame::GetFeaturesInArea(const float &x, const float  &y, const float  &r, const int minLevel, const int maxLevel)const {
 		std::vector<size_t> vIndices;
-		vIndices.reserve(N);
+		//vIndices.reserve(N);
 
 		const int nMinCellX = std::max(0, (int)floor((x - mnMinX - r)*mfGridElementWidthInv));
 		if (nMinCellX >= FRAME_GRID_COLS)
@@ -232,10 +254,11 @@ namespace EdgeSLAM {
 	}
 	void Frame::AssignFeaturesToGrid() {
 		int nReserve = 0.5f*N / (FRAME_GRID_COLS*FRAME_GRID_ROWS);
+		/*
 		for (unsigned int i = 0; i<FRAME_GRID_COLS; i++)
 			for (unsigned int j = 0; j<FRAME_GRID_ROWS; j++)
 				mGrid[i][j].reserve(nReserve);
-
+        */
 		for (int i = 0; i<N; i++)
 		{
 			const cv::KeyPoint &kp = mvKeysUn[i];

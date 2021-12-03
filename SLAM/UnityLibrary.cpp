@@ -60,9 +60,6 @@ extern "C" {
         ss << strPath << "/debug.txt";
         strLogFile = strPath+"/debug.txt";
 
-        ofile.open(strLogFile.c_str(), std::ios::trunc);
-        ofile<<"start\n";
-        ofile.close();
     }
 
     std::map<std::string, cv::Mat> UnityData;
@@ -86,6 +83,10 @@ extern "C" {
         pVoc->load(strVoc);
     }
     void SetInit(int _w, int _h, float _fx, float _fy, float _cx, float _cy, float _d1, float _d2, float _d3, float _d4, int nfeature, int nlevel, float fscale, int nSkip) {//char* vocName,
+
+        ofile.open(strLogFile.c_str(), std::ios::trunc);
+        ofile<<"start\n";
+        ofile.close();
 
 		mnWidth  = _w;
 		mnHeight = _h;
@@ -161,7 +162,8 @@ extern "C" {
 	}
 
     int SetFrame(void* data, int id, double ts, float& t1, float& t2) {
-        //ofile.open(strLogFile.c_str(), std::ios_base::out | std::ios_base::app);
+        ofile.open(strLogFile.c_str(), std::ios_base::out | std::ios_base::app);
+        ofile<<"Frame start"<<std::endl;
         std::chrono::high_resolution_clock::time_point start = std::chrono::high_resolution_clock::now();
 
         cv::Mat gray;
@@ -183,7 +185,8 @@ extern "C" {
         if(id % mnSkipFrame == 0){
             pMap->AddImage(gray.clone(), id);
         }
-
+        if(pPrevFrame)
+            delete pPrevFrame;
         pPrevFrame = pCurrFrame;
         pCurrFrame = new EdgeSLAM::Frame(gray, pCamera, id);
         pCurrFrame->logfile = strLogFile;
@@ -193,8 +196,8 @@ extern "C" {
         float t_total = du_total / 1000.0;
         t1 = t_total;
         t2 = 0.0;
-        //ofile<<"SetFrame="<<t_total<<std::endl;
-        //ofile.close();
+        ofile<<"SetFrame="<<t_total<<std::endl;
+        ofile.close();
         return pCurrFrame->N;
     }
     void SetLocalMap(){
@@ -203,13 +206,13 @@ extern "C" {
 
     void SetReferenceFrame(int id) {
         ////reference frame
-        ofile.open(strLogFile.c_str(), std::ios_base::out | std::ios_base::app);
-        std::chrono::high_resolution_clock::time_point start = std::chrono::high_resolution_clock::now();
+        //ofile.open(strLogFile.c_str(), std::ios_base::out | std::ios_base::app);
+        //ofile<<"ReferenceFrame=start"<<std::endl;
+        //std::chrono::high_resolution_clock::time_point start = std::chrono::high_resolution_clock::now();
         cv::Mat f1 = GetDataFromUnity("ReferenceFrame");
         auto pRefFrame = new EdgeSLAM::RefFrame(pCamera, (float*)f1.data);
-        EdgeSLAM::ORBDetector* detector = new EdgeSLAM::ORBDetector(mnFeature,mfScale,mnLevel);
         cv::Mat img = pMap->GetImage(id);
-        detector->Compute(img, cv::Mat(), pRefFrame->mvKeys, pRefFrame->mDescriptors);
+        pDetector->Compute(img, cv::Mat(), pRefFrame->mvKeys, pRefFrame->mDescriptors);
         //std::vector<cv::Mat> vCurrentDesc = Utils::toDescriptorVector(pRefFrame->mDescriptors);
 		//pVoc->transform(vCurrentDesc, pRefFrame->mBowVec, pRefFrame->mFeatVec, 4);
 		pRefFrame->logfile = strLogFile;
@@ -246,7 +249,7 @@ extern "C" {
             auto kf = ref;
             ref = ref->mpParent;
             kf->mpParent = nullptr;
-             auto vpMPs = kf->mvpMapPoints;
+            auto vpMPs = kf->mvpMapPoints;
             for(int i =0; i < kf->N; i++){
                 auto pMP = vpMPs[i];
                 if(!pMP || pMP->isBad()){
@@ -262,9 +265,9 @@ extern "C" {
         pMap->SetReferenceFrame(pRefFrame);
         pMap->SetLocalMap(pLocal);
 
-        std::chrono::high_resolution_clock::time_point end = std::chrono::high_resolution_clock::now();
-        auto du_total = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
-        float t_total = du_total / 1000.0;
+        //std::chrono::high_resolution_clock::time_point end = std::chrono::high_resolution_clock::now();
+        //auto du_total = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+        //float t_total = du_total / 1000.0;
         //ofile<<"SetReference="<<t_total<<std::endl;
         //ofile.close();
 	}
@@ -273,6 +276,8 @@ extern "C" {
         cv::Mat tdata = GetDataFromUnity("ObjectDetection");
         int n = tdata.rows/24;
         ObjectInfo = cv::Mat(n, 6, CV_32FC1, tdata.data);
+        //float* data = (float*)tdata.data;
+        //ObjectInfo =
     }
 
 	void AddContentInfo(int id, float x, float y, float z) {
@@ -282,9 +287,9 @@ extern "C" {
 	}
 
 	bool Track(void* data) {
-        ofile.open(strLogFile.c_str(), std::ios_base::out | std::ios_base::app);
+        //ofile.open(strLogFile.c_str(), std::ios_base::out | std::ios_base::app);
         std::chrono::high_resolution_clock::time_point start = std::chrono::high_resolution_clock::now();
-
+        //ofile<<"tracking start"<<std::endl;
 		bool bTrack = false;
 		int nMatch = -1;
 
@@ -372,8 +377,8 @@ extern "C" {
         std::chrono::high_resolution_clock::time_point end = std::chrono::high_resolution_clock::now();
         auto du_total = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
         float t_total = du_total / 1000.0;
-        ofile<<"Tracking="<<t_total<<std::endl;
-        ofile.close();
+        //ofile<<"Tracking="<<t_total<<std::endl;
+        //ofile.close();
 		return bTrack;
 	}
 
@@ -387,7 +392,8 @@ extern "C" {
     bool VisualizeFrame(void* data){
         if (!pCurrFrame)
 			return false;
-
+        ofile.open(strLogFile.c_str(), std::ios_base::out | std::ios_base::app);
+        ofile<<"visualize start"<<std::endl;
         cv::Mat img = cv::Mat(mnHeight, mnWidth, CV_8UC4, data);
         cv::cvtColor(img, img, cv::COLOR_BGRA2RGBA);
         cv::flip(img, img,0);
@@ -403,7 +409,7 @@ extern "C" {
             cv::Point2f right(obj.at<float>(j, 4), mnHeight-obj.at<float>(j, 5));
             cv::rectangle(img,left, right, cv::Scalar(255, 255, 255, 255));
         }
-
+        bool res = false;
 		if (pTracker->mTrackState == EdgeSLAM::TrackingState::Success) {
 
 			for (int i = 0; i < pCurrFrame->N; i++) {
@@ -460,7 +466,8 @@ extern "C" {
         ss<<strPath<<"/color.jpg";
         cv::imwrite(ss.str(), img);
         */
-
+        ofile<<"visualize end"<<std::endl;
+        ofile.close();
 		return true;
     }
 }

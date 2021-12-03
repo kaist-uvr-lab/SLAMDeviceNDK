@@ -30,8 +30,8 @@ namespace EdgeSLAM {
 
 		std::vector<g2o::EdgeSE3ProjectXYZOnlyPose*> vpEdgesMono;
 		std::vector<size_t> vnIndexEdgeMono;
-		vpEdgesMono.reserve(N);
-		vnIndexEdgeMono.reserve(N);
+		//vpEdgesMono.reserve(N);
+		//vnIndexEdgeMono.reserve(N);
 
 		const float deltaMono = sqrt(5.991);
 
