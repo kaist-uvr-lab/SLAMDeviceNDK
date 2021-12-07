@@ -17,7 +17,7 @@ namespace EdgeSLAM {
         mvKeys = std::vector<cv::KeyPoint>(N);
         mvpMapPoints = std::vector<MapPoint*>(N, static_cast<MapPoint*>(nullptr));
 
-         cv::Mat tempT = cv::Mat::eye(4, 4, CV_32FC1);
+        cv::Mat tempT = cv::Mat::eye(4, 4, CV_32FC1);
         tempT.at<float>(0, 0) = data[1];
         tempT.at<float>(0, 1) = data[2];
         tempT.at<float>(0, 2) = data[3];
@@ -134,6 +134,32 @@ namespace EdgeSLAM {
 		}
         ofile.close();
         */
+
+        /*
+        for (int i = 0; i < FRAME_GRID_COLS; i++)
+        {
+            for (int j = 0; j < FRAME_GRID_ROWS; j++)
+            {
+                std::vector<size_t>().swap(mGrid[i][j]);
+            }
+            delete[] mGrid[i];
+        }
+        delete[] mGrid;
+        */
+
+        std::vector<float>().swap(mvScaleFactors);
+        std::vector<float>().swap(mvInvScaleFactors);
+        std::vector<float>().swap(mvLevelSigma2);
+        std::vector<float>().swap(mvInvLevelSigma2);
+        std::vector<cv::KeyPoint>().swap(mvKeys);
+        std::vector<cv::KeyPoint>().swap(mvKeysUn);
+        std::vector<MapPoint*>().swap(mvpMapPoints);
+        std::vector<bool>().swap(mvbOutliers);
+
+        //std::map<RefFrame*, int>().swap(mConnectedKeyFrameWeights);
+        //std::vector<RefFrame*>().swap(mvpOrderedConnectedKeyFrames);
+        //std::vector<int>().swap(mvOrderedWeights);
+        //std::set<RefFrame*>().swap(mspChildrens);
 	}
 
     void RefFrame::UpdateMapPoints(){

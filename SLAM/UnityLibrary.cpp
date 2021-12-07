@@ -161,10 +161,9 @@ extern "C" {
         bIMU = bimu;
 	}
 
-    int SetFrame(void* data, int id, double ts, float& t1, float& t2) {
-        ofile.open(strLogFile.c_str(), std::ios_base::out | std::ios_base::app);
-        ofile<<"Frame start"<<std::endl;
-        std::chrono::high_resolution_clock::time_point start = std::chrono::high_resolution_clock::now();
+    int SetFrame(void* data, int id, double ts) {
+        //ofile.open(strLogFile.c_str(), std::ios_base::out | std::ios_base::app);
+        //ofile<<"Frame start"<<std::endl;
 
         cv::Mat gray;
         bool res = true;
@@ -191,13 +190,8 @@ extern "C" {
         pCurrFrame = new EdgeSLAM::Frame(gray, pCamera, id);
         pCurrFrame->logfile = strLogFile;
 
-        std::chrono::high_resolution_clock::time_point end = std::chrono::high_resolution_clock::now();
-        auto du_total = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
-        float t_total = du_total / 1000.0;
-        t1 = t_total;
-        t2 = 0.0;
-        ofile<<"SetFrame="<<t_total<<std::endl;
-        ofile.close();
+        //ofile<<"SetFrame="<<t_total<<std::endl;
+        //ofile.close();
         return pCurrFrame->N;
     }
     void SetLocalMap(){
@@ -206,8 +200,8 @@ extern "C" {
 
     void SetReferenceFrame(int id) {
         ////reference frame
-        //ofile.open(strLogFile.c_str(), std::ios_base::out | std::ios_base::app);
-        //ofile<<"ReferenceFrame=start"<<std::endl;
+        ofile.open(strLogFile.c_str(), std::ios_base::out | std::ios_base::app);
+        ofile<<"ReferenceFrame=start"<<std::endl;
         //std::chrono::high_resolution_clock::time_point start = std::chrono::high_resolution_clock::now();
         cv::Mat f1 = GetDataFromUnity("ReferenceFrame");
         auto pRefFrame = new EdgeSLAM::RefFrame(pCamera, (float*)f1.data);
@@ -225,6 +219,7 @@ extern "C" {
         std::set<EdgeSLAM::MapPoint*> spMPs;
         int nkf = 0;
         EdgeSLAM::RefFrame* ref = nullptr;
+        EdgeSLAM::RefFrame* last = nullptr;
         for(ref = pRefFrame; ref; ref = ref->mpParent, nkf++){
             if(!ref || nkf >= 5){
                 break;
@@ -242,24 +237,22 @@ extern "C" {
                     spMPs.insert(pMP);
                 }
             }
+            last = ref;
         }
 
         ////delete ref frame
-        while(ref){
-            auto kf = ref;
-            ref = ref->mpParent;
-            kf->mpParent = nullptr;
-            auto vpMPs = kf->mvpMapPoints;
-            for(int i =0; i < kf->N; i++){
+        if(ref){
+            auto vpMPs = ref->mvpMapPoints;
+            for(int i =0; i < ref->N; i++){
                 auto pMP = vpMPs[i];
                 if(!pMP || pMP->isBad()){
                     continue;
                 }
-                pMP->EraseObservation(kf);
+                pMP->EraseObservation(ref);
             }
-
-            if(!ref)
-                break;
+            last->mpParent = nullptr;
+            delete ref;
+            ofile<<"delete end"<<std::endl;
         }
 
         pMap->SetReferenceFrame(pRefFrame);
@@ -268,8 +261,10 @@ extern "C" {
         //std::chrono::high_resolution_clock::time_point end = std::chrono::high_resolution_clock::now();
         //auto du_total = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
         //float t_total = du_total / 1000.0;
-        //ofile<<"SetReference="<<t_total<<std::endl;
-        //ofile.close();
+        ofile<<"ReferenceFrame=End"<<std::endl;
+        ofile.close();
+
+        f1.release();
 	}
     void AddObjectInfos(){
         std::unique_lock<std::mutex> lock(mMutexObjectInfo);
@@ -288,7 +283,6 @@ extern "C" {
 
 	bool Track(void* data) {
         //ofile.open(strLogFile.c_str(), std::ios_base::out | std::ios_base::app);
-        std::chrono::high_resolution_clock::time_point start = std::chrono::high_resolution_clock::now();
         //ofile<<"tracking start"<<std::endl;
 		bool bTrack = false;
 		int nMatch = -1;
@@ -356,6 +350,7 @@ extern "C" {
 			else {
 				bTrack = true;
 			}
+			delete pLocal;
 		}
 
 		cv::Mat R = cv::Mat::eye(3, 3, CV_32FC1);
@@ -374,9 +369,6 @@ extern "C" {
 		R.push_back(t.t());
 		memcpy(data, R.data, sizeof(float) * 12);
 
-        std::chrono::high_resolution_clock::time_point end = std::chrono::high_resolution_clock::now();
-        auto du_total = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
-        float t_total = du_total / 1000.0;
         //ofile<<"Tracking="<<t_total<<std::endl;
         //ofile.close();
 		return bTrack;
@@ -392,8 +384,8 @@ extern "C" {
     bool VisualizeFrame(void* data){
         if (!pCurrFrame)
 			return false;
-        ofile.open(strLogFile.c_str(), std::ios_base::out | std::ios_base::app);
-        ofile<<"visualize start"<<std::endl;
+        //ofile.open(strLogFile.c_str(), std::ios_base::out | std::ios_base::app);
+        //ofile<<"visualize start"<<std::endl;
         cv::Mat img = cv::Mat(mnHeight, mnWidth, CV_8UC4, data);
         cv::cvtColor(img, img, cv::COLOR_BGRA2RGBA);
         cv::flip(img, img,0);
@@ -466,8 +458,8 @@ extern "C" {
         ss<<strPath<<"/color.jpg";
         cv::imwrite(ss.str(), img);
         */
-        ofile<<"visualize end"<<std::endl;
-        ofile.close();
+        //ofile<<"visualize end"<<std::endl;
+        //ofile.close();
 		return true;
     }
 }

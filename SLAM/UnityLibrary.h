@@ -15,7 +15,7 @@ extern "C" {
 
     bool Track(void* pose);
 
-    int  SetFrame(void* data, int id, double ts, float& t1, float& t2);
+    int  SetFrame(void* data, int id, double ts);
     void SetReferenceFrame(int id);
     void SetLocalMap();
     void SetIMUAddress(void* addr, bool bIMU);

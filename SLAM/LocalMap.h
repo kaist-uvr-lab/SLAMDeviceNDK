@@ -18,9 +18,6 @@ namespace EdgeSLAM {
 	public:
 		std::vector<MapPoint*> mvpMapPoints;
 		std::vector<TrackPoint*> mvpTrackPoints;
-		//cv::Mat mvfAngles;
-		//cv::Mat mvcScales;
-		//cv::Mat mDescriptors;
 	};
 }
 

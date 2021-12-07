@@ -33,6 +33,8 @@ namespace EdgeSLAM {
 
     void Map::SetLocalMap(LocalMap* pLocal){
         std::unique_lock<std::mutex> lock(mMutexLocalMap);
+        if(mpLocalMap)
+            delete mpLocalMap;
         mpLocalMap = pLocal;
     }
     void Map::GetLocalMap(LocalMap* pLocal){

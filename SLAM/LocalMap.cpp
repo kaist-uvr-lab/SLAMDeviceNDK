@@ -9,5 +9,7 @@ namespace EdgeSLAM {
 	    //mvfAngles.release();
 	    //mvcScales.release();
 	    //mDescriptors.release();
+	    std::vector<MapPoint*>().swap(mvpMapPoints);
+	    std::vector<TrackPoint*>().swap(mvpTrackPoints);
 	}
 }
