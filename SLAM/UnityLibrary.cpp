@@ -48,6 +48,7 @@ extern "C" {
 	int mnSkipFrame;
 	int mnFeature, mnLevel;
 	float mfScale;
+    int mnKeyFrame;
 
     std::ifstream inFile;
     char x[1000];
@@ -82,7 +83,7 @@ extern "C" {
         pVoc = new DBoW3::Vocabulary();
         pVoc->load(strVoc);
     }
-    void SetInit(int _w, int _h, float _fx, float _fy, float _cx, float _cy, float _d1, float _d2, float _d3, float _d4, int nfeature, int nlevel, float fscale, int nSkip) {//char* vocName,
+    void SetInit(int _w, int _h, float _fx, float _fy, float _cx, float _cy, float _d1, float _d2, float _d3, float _d4, int nfeature, int nlevel, float fscale, int nSkip, int nKFs) {//char* vocName,
 
         ofile.open(strLogFile.c_str(), std::ios::trunc);
         ofile<<"start\n";
@@ -91,6 +92,7 @@ extern "C" {
 		mnWidth  = _w;
 		mnHeight = _h;
         mnSkipFrame = nSkip;
+        mnKeyFrame = nKFs;
 
         mnFeature = nfeature;
         mnLevel = nlevel;
@@ -200,8 +202,8 @@ extern "C" {
 
     void SetReferenceFrame(int id) {
         ////reference frame
-        ofile.open(strLogFile.c_str(), std::ios_base::out | std::ios_base::app);
-        ofile<<"ReferenceFrame=start"<<std::endl;
+        //ofile.open(strLogFile.c_str(), std::ios_base::out | std::ios_base::app);
+        //ofile<<"ReferenceFrame=start"<<std::endl;
         //std::chrono::high_resolution_clock::time_point start = std::chrono::high_resolution_clock::now();
         cv::Mat f1 = GetDataFromUnity("ReferenceFrame");
         auto pRefFrame = new EdgeSLAM::RefFrame(pCamera, (float*)f1.data);
@@ -221,7 +223,7 @@ extern "C" {
         EdgeSLAM::RefFrame* ref = nullptr;
         EdgeSLAM::RefFrame* last = nullptr;
         for(ref = pRefFrame; ref; ref = ref->mpParent, nkf++){
-            if(!ref || nkf >= 5){
+            if(!ref || nkf >= mnKeyFrame){
                 break;
             }
             auto vpMPs = ref->mvpMapPoints;
@@ -252,7 +254,7 @@ extern "C" {
             }
             last->mpParent = nullptr;
             delete ref;
-            ofile<<"delete end"<<std::endl;
+            //ofile<<"delete end"<<std::endl;
         }
 
         pMap->SetReferenceFrame(pRefFrame);
@@ -261,8 +263,8 @@ extern "C" {
         //std::chrono::high_resolution_clock::time_point end = std::chrono::high_resolution_clock::now();
         //auto du_total = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
         //float t_total = du_total / 1000.0;
-        ofile<<"ReferenceFrame=End"<<std::endl;
-        ofile.close();
+        //ofile<<"ReferenceFrame=End"<<std::endl;
+        //ofile.close();
 
         f1.release();
 	}

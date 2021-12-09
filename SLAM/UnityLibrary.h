@@ -7,7 +7,7 @@
 extern "C" {
     void SetPath(char* path);
     void LoadVocabulary();
-    void SetInit(int _w, int _h, float _fx, float _fy, float _cx, float _cy, float _d1, float _d2, float _d3, float _d4, int nfeature, int nlevel, float fscale, int nSkip);//char* vocName,
+    void SetInit(int _w, int _h, float _fx, float _fy, float _cx, float _cy, float _d1, float _d2, float _d3, float _d4, int nfeature, int nlevel, float fscale, int nSkip, int nKFs);//char* vocName,
     void ConnectDevice();
 
     void SetDataFromUnity(void* data, char* path, int len, int strlen);

@@ -487,25 +487,25 @@ namespace EdgeSLAM
 		n1.UR = cv::Point2i(UL.x + halfX, UL.y);
 		n1.BL = cv::Point2i(UL.x, UL.y + halfY);
 		n1.BR = cv::Point2i(UL.x + halfX, UL.y + halfY);
-		//n1.vKeys.reserve(vKeys.size());
+		n1.vKeys.reserve(vKeys.size());
 
 		n2.UL = n1.UR;
 		n2.UR = UR;
 		n2.BL = n1.BR;
 		n2.BR = cv::Point2i(UR.x, UL.y + halfY);
-		//n2.vKeys.reserve(vKeys.size());
+		n2.vKeys.reserve(vKeys.size());
 
 		n3.UL = n1.BL;
 		n3.UR = n1.BR;
 		n3.BL = BL;
 		n3.BR = cv::Point2i(n1.BR.x, BL.y);
-		//n3.vKeys.reserve(vKeys.size());
+		n3.vKeys.reserve(vKeys.size());
 
 		n4.UL = n3.UR;
 		n4.UR = n2.BR;
 		n4.BL = n3.BR;
 		n4.BR = BR;
-		//n4.vKeys.reserve(vKeys.size());
+		n4.vKeys.reserve(vKeys.size());
 
 		//Associate points to childs
 		for (size_t i = 0; i<vKeys.size(); i++)
@@ -555,7 +555,7 @@ namespace EdgeSLAM
 			ni.UR = cv::Point2i(hX*static_cast<float>(i + 1), 0);
 			ni.BL = cv::Point2i(ni.UL.x, maxY - minY);
 			ni.BR = cv::Point2i(ni.UR.x, maxY - minY);
-			//ni.vKeys.reserve(vToDistributeKeys.size());
+			ni.vKeys.reserve(vToDistributeKeys.size());
 
 			lNodes.push_back(ni);
 			vpIniNodes[i] = &lNodes.back();
@@ -588,7 +588,7 @@ namespace EdgeSLAM
 		int iteration = 0;
 
 		vector<pair<int, ExtractorNode*> > vSizeAndPointerToNode;
-		//vSizeAndPointerToNode.reserve(lNodes.size() * 4);
+		vSizeAndPointerToNode.reserve(lNodes.size() * 4);
 
 		while (!bFinish)
 		{
@@ -739,7 +739,7 @@ namespace EdgeSLAM
 
 		// Retain the best point in each node
 		vector<cv::KeyPoint> vResultKeys;
-		//vResultKeys.reserve(nfeatures);
+		vResultKeys.reserve(nfeatures);
 		for (list<ExtractorNode>::iterator lit = lNodes.begin(); lit != lNodes.end(); lit++)
 		{
 			vector<cv::KeyPoint> &vNodeKeys = lit->vKeys;
@@ -775,7 +775,7 @@ namespace EdgeSLAM
 			const int maxBorderY = vImagePyramid[level].rows - EDGE_THRESHOLD + 3;
 
 			vector<cv::KeyPoint> vToDistributeKeys;
-			//vToDistributeKeys.reserve(nfeatures * 10);
+			vToDistributeKeys.reserve(nfeatures * 10);
 
 			const float width = (maxBorderX - minBorderX);
 			const float height = (maxBorderY - minBorderY);
@@ -828,7 +828,7 @@ namespace EdgeSLAM
 			}
 
 			vector<KeyPoint> & keypoints = allKeypoints[level];
-			//keypoints.reserve(nfeatures);
+			keypoints.reserve(nfeatures);
 
 			keypoints = DistributeOctTree(vToDistributeKeys, minBorderX, maxBorderX,
 				minBorderY, maxBorderY, mnFeaturesPerLevel[level], level);
@@ -892,7 +892,7 @@ namespace EdgeSLAM
 		}
 
 		_keypoints.clear();
-		//_keypoints.reserve(nkeypoints);
+		_keypoints.reserve(nkeypoints);
 
 		int offset = 0;
 		for (int level = 0; level < nlevels; ++level)
@@ -957,7 +957,7 @@ namespace EdgeSLAM
 		}
 
 		_keypoints.clear();
-		//_keypoints.reserve(nkeypoints);
+		_keypoints.reserve(nkeypoints);
 
 		int offset = 0;
 		for (int level = 0; level < nlevels; ++level)

@@ -44,6 +44,9 @@ namespace EdgeSLAM {
             float y = data[nIdx++];
             float z = data[nIdx++];
 
+            if(kp.octave > detector->mnScaleLevels)
+                continue;
+
             MapPoint* pMP = nullptr;
             if(MAP->CheckMapPoint(id)){
                 pMP = MAP->GetMapPoint(id);
@@ -135,18 +138,6 @@ namespace EdgeSLAM {
         ofile.close();
         */
 
-        /*
-        for (int i = 0; i < FRAME_GRID_COLS; i++)
-        {
-            for (int j = 0; j < FRAME_GRID_ROWS; j++)
-            {
-                std::vector<size_t>().swap(mGrid[i][j]);
-            }
-            delete[] mGrid[i];
-        }
-        delete[] mGrid;
-        */
-
         std::vector<float>().swap(mvScaleFactors);
         std::vector<float>().swap(mvInvScaleFactors);
         std::vector<float>().swap(mvLevelSigma2);
@@ -155,11 +146,6 @@ namespace EdgeSLAM {
         std::vector<cv::KeyPoint>().swap(mvKeysUn);
         std::vector<MapPoint*>().swap(mvpMapPoints);
         std::vector<bool>().swap(mvbOutliers);
-
-        //std::map<RefFrame*, int>().swap(mConnectedKeyFrameWeights);
-        //std::vector<RefFrame*>().swap(mvpOrderedConnectedKeyFrames);
-        //std::vector<int>().swap(mvOrderedWeights);
-        //std::set<RefFrame*>().swap(mspChildrens);
 	}
 
     void RefFrame::UpdateMapPoints(){
@@ -236,31 +222,6 @@ namespace EdgeSLAM {
         return true;
     }
 
-/*
-	int RefFrame::TrackedMapPoints(const int &minObs)
-	{
-		std::unique_lock<std::mutex> lock(mMutexFeatures);
-
-		int nPoints = 0;
-		const bool bCheckObs = minObs>0;
-		for (int i = 0; i<N; i++)
-		{
-			MapPoint* pMP = mvpMapPoints[i];
-			if (pMP)
-			{
-				if (bCheckObs)
-				{
-					if (mvpMapPoints[i]->Observations() >= minObs)
-						nPoints++;
-				}
-				else
-					nPoints++;
-			}
-		}
-
-		return nPoints;
-	}
-*/
 	void RefFrame::SetPose(const cv::Mat &Tcw) {
 		mpCamPose->SetPose(Tcw);
 	}
@@ -303,30 +264,4 @@ namespace EdgeSLAM {
 			mvKeysUn[i] = kp;
 		}
 	}
-	void RefFrame::AssignFeaturesToGrid() {
-		int nReserve = 0.5f*N / (FRAME_GRID_COLS*FRAME_GRID_ROWS);
-		/*
-		for (unsigned int i = 0; i<FRAME_GRID_COLS; i++)
-			for (unsigned int j = 0; j<FRAME_GRID_ROWS; j++)
-				mGrid[i][j].reserve(nReserve);
-        */
-		for (int i = 0; i<N; i++)
-		{
-			const cv::KeyPoint &kp = mvKeysUn[i];
-
-			int nGridPosX, nGridPosY;
-			if (PosInGrid(kp, nGridPosX, nGridPosY))
-				mGrid[nGridPosX][nGridPosY].push_back(i);
-		}
-	}
-	bool RefFrame::PosInGrid(const cv::KeyPoint &kp, int &posX, int &posY) {
-		posX = round((kp.pt.x - mnMinX)*mfGridElementWidthInv);
-		posY = round((kp.pt.y - mnMinY)*mfGridElementHeightInv);
-
-		if (posX<0 || posX >= FRAME_GRID_COLS || posY<0 || posY >= FRAME_GRID_ROWS)
-			return false;
-
-		return true;
-	}
-
 }

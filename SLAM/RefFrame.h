@@ -48,7 +48,6 @@ namespace EdgeSLAM {
 		int FRAME_GRID_ROWS;
 		float mfGridElementWidthInv;
 		float mfGridElementHeightInv;
-		std::vector<std::size_t> **mGrid;
 
 		int mnScaleLevels;
 		float mfScaleFactor;
@@ -63,12 +62,7 @@ namespace EdgeSLAM {
 		float mnMinY;
 		float mnMaxY;
 	public:
-		std::map<RefFrame*, int> mConnectedKeyFrameWeights;
-		std::vector<RefFrame*> mvpOrderedConnectedKeyFrames;
-		std::vector<int> mvOrderedWeights;
-		bool mbFirstConnection;
 		RefFrame* mpParent;
-		std::set<RefFrame*> mspChildrens;
 	public:
 		Camera* mpCamera;
 		static ORBDetector* detector;
@@ -80,10 +74,8 @@ namespace EdgeSLAM {
 		DBoW3::FeatureVector mFeatVec;
 	private:
         void UndistortKeyPoints();
-        void AssignFeaturesToGrid();
-        bool PosInGrid(const cv::KeyPoint &kp, int &posX, int &posY);
 	private:
-		std::mutex mMutexFeatures, mMutexConnections;
+		std::mutex mMutexFeatures;
 	public:
 		CameraPose* mpCamPose;
 		void SetPose(const cv::Mat &Tcw);
