@@ -170,9 +170,9 @@ extern "C" {
         cv::Mat gray;
         bool res = true;
         cv::Mat frame = cv::Mat(mnHeight, mnWidth, CV_8UC4, data);
-        cv::cvtColor(frame, frame, cv::COLOR_BGRA2RGBA);
+        //cv::cvtColor(frame, frame, cv::COLOR_BGRA2RGBA);
         cv::flip(frame, frame,0);
-        cv::cvtColor(frame, gray, cv::COLOR_RGBA2GRAY);//COLOR_BGRA2GRAY
+        cv::cvtColor(frame, gray, cv::COLOR_BGRA2GRAY);//COLOR_BGRA2GRAY, COLOR_RGBA2GRAY
 
         /*
         std::stringstream ss;
@@ -386,11 +386,22 @@ extern "C" {
     bool VisualizeFrame(void* data){
         if (!pCurrFrame)
 			return false;
+        //이미 data는 setframe에서 변경되어서 옴
         //ofile.open(strLogFile.c_str(), std::ios_base::out | std::ios_base::app);
         //ofile<<"visualize start"<<std::endl;
         cv::Mat img = cv::Mat(mnHeight, mnWidth, CV_8UC4, data);
-        cv::cvtColor(img, img, cv::COLOR_BGRA2RGBA);
-        cv::flip(img, img,0);
+
+        //(a,r,g,b) = cv ->(rgba)
+        //cv::cvtColor(img, img, cv::COLOR_BGRA2RGBA);
+
+        std::vector<cv::Mat> colors(4);
+		cv::split(img, colors);
+		std::vector<cv::Mat> colors2(4);
+		colors2[0] = colors[3];
+		colors2[1] = colors[0];//2
+		colors2[2] = colors[1];//1
+		colors2[3] = colors[2];//0
+		cv::merge(colors2, img);
 
         cv::Mat obj;
         {
@@ -408,7 +419,7 @@ extern "C" {
 
 			for (int i = 0; i < pCurrFrame->N; i++) {
 				auto pt = pCurrFrame->mvKeys[i].pt;
-                pt.y = mnHeight -pt.y;
+                //pt.y = mnHeight -pt.y;
                 cv::circle(img, pt, 1, cv::Scalar(255, 0, 0, 255), -1);
 				//if (!pCurrFrame->mvpMapPoints[i] || pCurrFrame->mvbOutliers[i])
 				//	continue;
@@ -450,10 +461,10 @@ extern "C" {
 			}
 			*/
 		}
-		//cv::flip(img, img, 0);
+		cv::flip(img, img, 0);
 
-		cv::cvtColor(img, img, cv::COLOR_RGBA2BGRA);
-		memcpy(data, img.data, sizeof(cv::Vec4b) * img.rows * img.cols);
+		//cv::cvtColor(img, img, cv::COLOR_RGBA2BGRA);
+		//memcpy(data, img.data, sizeof(cv::Vec4b) * img.rows * img.cols);
 
         /*
         std::stringstream ss;
