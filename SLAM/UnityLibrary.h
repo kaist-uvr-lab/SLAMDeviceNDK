@@ -23,6 +23,9 @@ extern "C" {
     void AddObjectInfos();
     void AddContentInfo(int id, float x, float y, float z);
 
+    void SemanticColorInit();
+    void Segmentation();
+
     void WriteLog(char* data);
 
     bool VisualizeFrame(void* data);

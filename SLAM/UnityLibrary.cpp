@@ -39,9 +39,61 @@ extern "C" {
     std::map<int, cv::Mat> mapContentInfos;
     std::mutex mMutexContentInfo;
 
-    //std::map<int, cv::Mat> mapObjectInfos;
+    ////object detection
     cv::Mat ObjectInfo = cv::Mat::zeros(0,6,CV_32FC1);
     std::mutex mMutexObjectInfo;
+    ////object detection
+
+    ////segmentation
+    std::mutex mMutexSegmentation;
+    std::vector<cv::Vec4b> SemanticColors;
+    cv::Mat LabeledImage = cv::Mat::zeros(0,0,CV_8UC4);
+    ////segmentation
+
+	void SemanticColorInit() {
+		cv::Mat colormap = cv::Mat::zeros(256, 3, CV_8UC1);
+		cv::Mat ind = cv::Mat::zeros(256, 1, CV_8UC1);
+		for (int i = 1; i < ind.rows; i++) {
+			ind.at<uchar>(i) = i;
+		}
+
+		for (int i = 7; i >= 0; i--) {
+			for (int j = 0; j < 3; j++) {
+				cv::Mat tempCol = colormap.col(j);
+				int a = pow(2, j);
+				int b = pow(2, i);
+				cv::Mat temp = ((ind / a) & 1) * b;
+				tempCol |= temp;
+				tempCol.copyTo(colormap.col(j));
+			}
+			ind /= 8;
+		}
+
+		for (int i = 0; i < colormap.rows; i++) {
+			cv::Vec4b color = cv::Vec4b(colormap.at<uchar>(i, 0), colormap.at<uchar>(i, 1), colormap.at<uchar>(i, 2),255);
+			SemanticColors.push_back(color);
+		}
+	}
+    void Segmentation(){
+        std::unique_lock<std::mutex> lock(mMutexSegmentation);
+        cv::Mat tdata = GetDataFromUnity("Segmentation");
+
+        //cv::Mat temp = cv::Mat::zeros(tdata.rows, 1, CV_8UC1);
+        //std::memcpy(temp.data, tdata.data(), res.size());
+        cv::Mat labeled = cv::imdecode(tdata, cv::IMREAD_GRAYSCALE);
+
+        int w = labeled.cols;
+        int h = labeled.rows;
+
+        LabeledImage = cv::Mat::zeros(h, w, CV_8UC4);
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                int label = labeled.at<uchar>(y, x) + 1;
+                LabeledImage.at<cv::Vec4b>(y, x) = SemanticColors[label];
+            }
+        }
+    }
+
 
     std::string strPath;
 	int mnWidth, mnHeight;
@@ -83,6 +135,7 @@ extern "C" {
         pVoc = new DBoW3::Vocabulary();
         pVoc->load(strVoc);
     }
+
     void SetInit(int _w, int _h, float _fx, float _fy, float _cx, float _cy, float _d1, float _d2, float _d3, float _d4, int nfeature, int nlevel, float fscale, int nSkip, int nKFs) {//char* vocName,
 
         ofile.open(strLogFile.c_str(), std::ios::trunc);
@@ -100,6 +153,7 @@ extern "C" {
 
         pDetector = new EdgeSLAM::ORBDetector(nfeature,fscale,nlevel);
         pCamera = new EdgeSLAM::Camera(_w, _h, _fx, _fy, _cx, _cy, _d1, _d2, _d3, _d4);
+        SemanticColorInit();
         return;
 
         pTracker = new EdgeSLAM::Tracker();
@@ -153,6 +207,7 @@ extern "C" {
 
         pTracker->mTrackState = EdgeSLAM::TrackingState::NotEstimated;
         mapContentInfos.clear();
+        LabeledImage = cv::Mat::zeros(0,0,CV_8UC4);
     }
 
     void* imuAddr;
@@ -410,10 +465,19 @@ extern "C" {
         }
 
         for(int j = 0, jend = obj.rows; j < jend ;j++){
-            cv::Point2f left(obj.at<float>(j, 2), mnHeight-obj.at<float>(j, 3));
-            cv::Point2f right(obj.at<float>(j, 4), mnHeight-obj.at<float>(j, 5));
+            cv::Point2f left(obj.at<float>(j, 2), obj.at<float>(j, 3));
+            cv::Point2f right(obj.at<float>(j, 4), obj.at<float>(j, 5));
             cv::rectangle(img,left, right, cv::Scalar(255, 255, 255, 255));
         }
+
+        cv::Mat labeled;
+        {
+            std::unique_lock<std::mutex> lock(mMutexSegmentation);
+            labeled = LabeledImage.clone();
+        }
+        if(labeled.rows > 0)
+            cv::addWeighted(img, 0.7, labeled, 0.3,0.0, img);
+
         bool res = false;
 		if (pTracker->mTrackState == EdgeSLAM::TrackingState::Success) {
 
