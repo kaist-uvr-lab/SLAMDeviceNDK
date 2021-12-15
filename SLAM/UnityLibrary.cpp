@@ -410,22 +410,20 @@ extern "C" {
 			delete pLocal;
 		}
 
-		cv::Mat R = cv::Mat::eye(3, 3, CV_32FC1);
-		cv::Mat t = cv::Mat::zeros(3, 1, CV_32FC1);
 		if (bTrack) {
 			pTracker->mTrackState = EdgeSLAM::TrackingState::Success;
 			pMotionModel->update(pCurrFrame->GetPose());
 			cv::Mat T = pCurrFrame->GetPose();
-			R = T.rowRange(0, 3).colRange(0, 3).clone();
-			t = T.col(3).rowRange(0, 3).clone();
+		    cv::Mat P = cv::Mat(4,3, CV_32FC1, data);
+		    T.rowRange(0, 3).colRange(0, 3).copyTo(P.rowRange(0, 3));
+            cv::Mat t = T.col(3).rowRange(0, 3).t();
+            t.copyTo(P.row(3));
 		}
 		else {
 			pTracker->mTrackState = EdgeSLAM::TrackingState::Failed;
 			pMotionModel->reset();
 		}
-		R.push_back(t.t());
-		memcpy(data, R.data, sizeof(float) * 12);
-
+		
         //ofile<<"Tracking="<<t_total<<std::endl;
         //ofile.close();
 		return bTrack;
