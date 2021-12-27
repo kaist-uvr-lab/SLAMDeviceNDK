@@ -12,6 +12,7 @@
 #include "CameraPose.h"
 #include "MotionModel.h"
 #include "LocalMap.h"
+#include "ThreadPool.h"
 #include <thread>
 
 //���� https://darkstart.tistory.com/42
@@ -26,6 +27,7 @@ extern "C" {
 	EdgeSLAM::Tracker* pTracker;
 	DBoW3::Vocabulary* pVoc;
 	EdgeSLAM::Map* pMap;
+    ThreadPool::ThreadPool* POOL = nullptr;
 
 	//std::map<int, EdgeSLAM::MapPoint*> EdgeSLAM::RefFrame::MapPoints;
 	EdgeSLAM::ORBDetector* EdgeSLAM::Tracker::Detector;
@@ -239,6 +241,7 @@ extern "C" {
         mfScale = fscale;
 
         mptRefThread = new std::thread(RefThreadRun);
+        POOL = new ThreadPool::ThreadPool(24);
 
         pDetector = new EdgeSLAM::ORBDetector(nfeature,fscale,nlevel);
         pCamera = new EdgeSLAM::Camera(_w, _h, _fx, _fy, _cx, _cy, _d1, _d2, _d3, _d4);
@@ -406,9 +409,8 @@ extern "C" {
     }
 
     void SetReferenceFrame(int id) {
-
-        InsertData(id);
-
+        //InsertData(id);
+        POOL->EnqueueJob(CreateReferenceFrame, id);
 	}
     void AddObjectInfos(){
         std::unique_lock<std::mutex> lock(mMutexObjectInfo);
