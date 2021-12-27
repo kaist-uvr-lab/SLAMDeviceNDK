@@ -44,7 +44,7 @@ namespace EdgeSLAM {
             float y = data[nIdx++];
             float z = data[nIdx++];
 
-            if(kp.octave > detector->mnScaleLevels)
+            if(kp.octave >= detector->mnScaleLevels)
                 continue;
 
             MapPoint* pMP = nullptr;

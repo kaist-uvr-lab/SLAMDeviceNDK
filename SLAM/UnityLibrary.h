@@ -26,7 +26,7 @@ extern "C" {
     void SemanticColorInit();
     void Segmentation();
 
-    void WriteLog(char* data);
+    void WriteLog(std::string str);
 
     bool VisualizeFrame(void* data);
     //bool GetMatchingImage(void* data);

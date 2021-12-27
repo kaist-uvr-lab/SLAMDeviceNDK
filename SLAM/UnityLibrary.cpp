@@ -11,8 +11,8 @@
 #include "Tracker.h"
 #include "CameraPose.h"
 #include "MotionModel.h"
-
 #include "LocalMap.h"
+#include <thread>
 
 //���� https://darkstart.tistory.com/42
 extern "C" {
@@ -39,6 +39,8 @@ extern "C" {
     std::map<int, cv::Mat> mapContentInfos;
     std::mutex mMutexContentInfo;
 
+    std::thread* mptRefThread;
+
     ////object detection
     cv::Mat ObjectInfo = cv::Mat::zeros(0,6,CV_32FC1);
     std::mutex mMutexObjectInfo;
@@ -49,6 +51,22 @@ extern "C" {
     std::vector<cv::Vec4b> SemanticColors;
     cv::Mat LabeledImage = cv::Mat::zeros(0,0,CV_8UC4);
     ////segmentation
+
+    std::string strPath;
+	int mnWidth, mnHeight;
+	int mnSkipFrame;
+	int mnFeature, mnLevel;
+	float mfScale;
+    int mnKeyFrame;
+
+    std::ifstream inFile;
+    char x[1000];
+
+    std::ofstream ofile;
+    std::string strLogFile;
+
+    std::map<std::string, cv::Mat> UnityData;
+    std::mutex mMutexUnityData;
 
 	void SemanticColorInit() {
 		cv::Mat colormap = cv::Mat::zeros(256, 3, CV_8UC1);
@@ -94,29 +112,98 @@ extern "C" {
         }
     }
 
+    std::mutex mMutexDatas;
+    std::list<int> listDatas;
+    bool CheckNewData(){
+        std::unique_lock<std::mutex> lock(mMutexDatas);
+        return(!listDatas.empty());
+    }
+    void ProcessNewData(){
+        int id;
+        {
+            std::unique_lock<std::mutex> lock(mMutexDatas);
+            id = listDatas.front();
+            listDatas.pop_front();
+        }
+        ////create referenceframe
+        WriteLog("SetReference::Start");
+        cv::Mat f1 = GetDataFromUnity("ReferenceFrame");
+        auto pRefFrame = new EdgeSLAM::RefFrame(pCamera, (float*)f1.data);
+        cv::Mat img = pMap->GetImage(id);
+        pDetector->Compute(img, cv::Mat(), pRefFrame->mvKeys, pRefFrame->mDescriptors);
+        pRefFrame->logfile = strLogFile;
+        pRefFrame->UpdateMapPoints();
+        auto pPrefRef = pMap->GetReferenceFrame();
+        pRefFrame->mpParent = pPrefRef;
 
-    std::string strPath;
-	int mnWidth, mnHeight;
-	int mnSkipFrame;
-	int mnFeature, mnLevel;
-	float mfScale;
-    int mnKeyFrame;
+        ////local map 갱신
+        EdgeSLAM::LocalMap* pLocal = new EdgeSLAM::LocalMap();
+        std::set<EdgeSLAM::MapPoint*> spMPs;
+        int nkf = 0;
+        EdgeSLAM::RefFrame* ref = nullptr;
+        EdgeSLAM::RefFrame* last = nullptr;
+        for(ref = pRefFrame; ref; ref = ref->mpParent, nkf++){
+            if(!ref || nkf >= mnKeyFrame){
+                break;
+            }
+            auto vpMPs = ref->mvpMapPoints;
+            for(int i =0; i < ref->N; i++){
+                auto pMP = vpMPs[i];
+                if(!pMP || spMPs.count(pMP)){
+                    continue;
+                }
+                auto pTP = new EdgeSLAM::TrackPoint();
+                 if(pRefFrame->is_in_frustum(pMP, pTP,0.5)){
+                    pLocal->mvpMapPoints.push_back(pMP);
+                    pLocal->mvpTrackPoints.push_back(pTP);
+                    spMPs.insert(pMP);
+                }
+            }
+            last = ref;
+        }
 
-    std::ifstream inFile;
-    char x[1000];
+        ////delete ref frame
+        if(ref){
+            auto vpMPs = ref->mvpMapPoints;
+            for(int i =0; i < ref->N; i++){
+                auto pMP = vpMPs[i];
+                if(!pMP || pMP->isBad()){
+                    continue;
+                }
+                pMP->EraseObservation(ref);
+            }
+            last->mpParent = nullptr;
+            delete ref;
+            //ofile<<"delete end"<<std::endl;
+        }
 
-    std::ofstream ofile;
-    std::string strLogFile;
+        pMap->SetReferenceFrame(pRefFrame);
+        pMap->SetLocalMap(pLocal);
+        WriteLog("SetReference::End");
+        f1.release();
+    }
+    void InsertData(int id){
+        std::unique_lock<std::mutex> lock(mMutexDatas);
+        listDatas.push_back(id);
+    }
+    void RefThreadRun(){
+        while(true){
+            if(CheckNewData()){
+                ProcessNewData();
+            }
+        }
+    }
+
+
+
     void SetPath(char* path) {
         strPath = std::string(path);
         std::stringstream ss;
         ss << strPath << "/debug.txt";
         strLogFile = strPath+"/debug.txt";
-
     }
 
-    std::map<std::string, cv::Mat> UnityData;
-    std::mutex mMutexUnityData;
+
     void SetDataFromUnity(void* data, char* ckeyword, int len, int strlen){
         cv::Mat tempData(len,1,CV_8UC1,data);
         std::string keyword(ckeyword, strlen);
@@ -150,6 +237,8 @@ extern "C" {
         mnFeature = nfeature;
         mnLevel = nlevel;
         mfScale = fscale;
+
+        mptRefThread = new std::thread(RefThreadRun);
 
         pDetector = new EdgeSLAM::ORBDetector(nfeature,fscale,nlevel);
         pCamera = new EdgeSLAM::Camera(_w, _h, _fx, _fy, _cx, _cy, _d1, _d2, _d3, _d4);
@@ -221,7 +310,7 @@ extern "C" {
     int SetFrame(void* data, int id, double ts) {
         //ofile.open(strLogFile.c_str(), std::ios_base::out | std::ios_base::app);
         //ofile<<"Frame start"<<std::endl;
-
+        WriteLog("SetFrame::Start");
         cv::Mat gray;
         bool res = true;
         cv::Mat frame = cv::Mat(mnHeight, mnWidth, CV_8UC4, data);
@@ -249,24 +338,22 @@ extern "C" {
 
         //ofile<<"SetFrame="<<t_total<<std::endl;
         //ofile.close();
+        WriteLog("SetFrame::End");
         return pCurrFrame->N;
     }
     void SetLocalMap(){
 
     }
 
-    void SetReferenceFrame(int id) {
-        ////reference frame
-        //ofile.open(strLogFile.c_str(), std::ios_base::out | std::ios_base::app);
-        //ofile<<"ReferenceFrame=start"<<std::endl;
-        //std::chrono::high_resolution_clock::time_point start = std::chrono::high_resolution_clock::now();
+    void CreateReferenceFrame(int id){
+        WriteLog("SetReference::Start");
         cv::Mat f1 = GetDataFromUnity("ReferenceFrame");
         auto pRefFrame = new EdgeSLAM::RefFrame(pCamera, (float*)f1.data);
         cv::Mat img = pMap->GetImage(id);
         pDetector->Compute(img, cv::Mat(), pRefFrame->mvKeys, pRefFrame->mDescriptors);
         //std::vector<cv::Mat> vCurrentDesc = Utils::toDescriptorVector(pRefFrame->mDescriptors);
-		//pVoc->transform(vCurrentDesc, pRefFrame->mBowVec, pRefFrame->mFeatVec, 4);
-		pRefFrame->logfile = strLogFile;
+        //pVoc->transform(vCurrentDesc, pRefFrame->mBowVec, pRefFrame->mFeatVec, 4);
+        pRefFrame->logfile = strLogFile;
         pRefFrame->UpdateMapPoints();
         auto pPrefRef = pMap->GetReferenceFrame();
         pRefFrame->mpParent = pPrefRef;
@@ -314,14 +401,14 @@ extern "C" {
 
         pMap->SetReferenceFrame(pRefFrame);
         pMap->SetLocalMap(pLocal);
-
-        //std::chrono::high_resolution_clock::time_point end = std::chrono::high_resolution_clock::now();
-        //auto du_total = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
-        //float t_total = du_total / 1000.0;
-        //ofile<<"ReferenceFrame=End"<<std::endl;
-        //ofile.close();
-
         f1.release();
+        WriteLog("SetReference::End");
+    }
+
+    void SetReferenceFrame(int id) {
+
+        InsertData(id);
+
 	}
     void AddObjectInfos(){
         std::unique_lock<std::mutex> lock(mMutexObjectInfo);
@@ -343,7 +430,7 @@ extern "C" {
         //ofile<<"tracking start"<<std::endl;
 		bool bTrack = false;
 		int nMatch = -1;
-
+        WriteLog("Track::Start");
 		if (pTracker->mTrackState == EdgeSLAM::TrackingState::NotEstimated || pTracker->mTrackState == EdgeSLAM::TrackingState::Failed) {
 			EdgeSLAM::RefFrame* rf = pMap->GetReferenceFrame();
 
@@ -426,13 +513,15 @@ extern "C" {
 		
         //ofile<<"Tracking="<<t_total<<std::endl;
         //ofile.close();
+        WriteLog("Track::End");
 		return bTrack;
 	}
-
-    void WriteLog(char* data){
-        std::string log(data);
+    std::mutex mMutexLogFile;
+    void WriteLog(std::string str){
+        //std::string log(data);
+        std::unique_lock<std::mutex> lock(mMutexLogFile);
         ofile.open(strLogFile.c_str(), std::ios_base::out | std::ios_base::app);
-        ofile<<log<<"\n";
+        ofile<<str<<"\n";
         ofile.close();
     }
 
