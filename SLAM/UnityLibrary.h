@@ -20,11 +20,11 @@ extern "C" {
     void SetLocalMap();
     void SetIMUAddress(void* addr, bool bIMU);
 
-    void AddObjectInfos();
+    void AddObjectInfos(int id);
     void AddContentInfo(int id, float x, float y, float z);
 
     void SemanticColorInit();
-    void Segmentation();
+    void Segmentation(int id);
 
     void WriteLog(std::string str);
 

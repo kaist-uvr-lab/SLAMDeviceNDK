@@ -13,6 +13,9 @@
 #include "MotionModel.h"
 #include "LocalMap.h"
 #include "ThreadPool.h"
+#include "ConcurrentVector.h"
+#include "ConcurrentMap.h"
+#include <atomic>
 #include <thread>
 
 //���� https://darkstart.tistory.com/42
@@ -41,7 +44,8 @@ extern "C" {
     std::map<int, cv::Mat> mapContentInfos;
     std::mutex mMutexContentInfo;
 
-    std::thread* mptRefThread;
+    ConcurrentVector<cv::Point2f> cvObjects;
+    ConcurrentMap<int, cv::Mat> cvFlows;
 
     ////object detection
     cv::Mat ObjectInfo = cv::Mat::zeros(0,6,CV_32FC1);
@@ -60,6 +64,7 @@ extern "C" {
 	int mnFeature, mnLevel;
 	float mfScale;
     int mnKeyFrame;
+    std::atomic<int> mnCurrFrameID, mnLastUpdatedID;
 
     std::ifstream inFile;
     char x[1000];
@@ -94,7 +99,7 @@ extern "C" {
 			SemanticColors.push_back(color);
 		}
 	}
-    void Segmentation(){
+    void Segmentation(int id){
         std::unique_lock<std::mutex> lock(mMutexSegmentation);
         cv::Mat tdata = GetDataFromUnity("Segmentation");
 
@@ -114,97 +119,12 @@ extern "C" {
         }
     }
 
-    std::mutex mMutexDatas;
-    std::list<int> listDatas;
-    bool CheckNewData(){
-        std::unique_lock<std::mutex> lock(mMutexDatas);
-        return(!listDatas.empty());
-    }
-    void ProcessNewData(){
-        int id;
-        {
-            std::unique_lock<std::mutex> lock(mMutexDatas);
-            id = listDatas.front();
-            listDatas.pop_front();
-        }
-        ////create referenceframe
-        WriteLog("SetReference::Start");
-        cv::Mat f1 = GetDataFromUnity("ReferenceFrame");
-        auto pRefFrame = new EdgeSLAM::RefFrame(pCamera, (float*)f1.data);
-        cv::Mat img = pMap->GetImage(id);
-        pDetector->Compute(img, cv::Mat(), pRefFrame->mvKeys, pRefFrame->mDescriptors);
-        pRefFrame->logfile = strLogFile;
-        pRefFrame->UpdateMapPoints();
-        auto pPrefRef = pMap->GetReferenceFrame();
-        pRefFrame->mpParent = pPrefRef;
-
-        ////local map 갱신
-        EdgeSLAM::LocalMap* pLocal = new EdgeSLAM::LocalMap();
-        std::set<EdgeSLAM::MapPoint*> spMPs;
-        int nkf = 0;
-        EdgeSLAM::RefFrame* ref = nullptr;
-        EdgeSLAM::RefFrame* last = nullptr;
-        for(ref = pRefFrame; ref; ref = ref->mpParent, nkf++){
-            if(!ref || nkf >= mnKeyFrame){
-                break;
-            }
-            auto vpMPs = ref->mvpMapPoints;
-            for(int i =0; i < ref->N; i++){
-                auto pMP = vpMPs[i];
-                if(!pMP || spMPs.count(pMP)){
-                    continue;
-                }
-                auto pTP = new EdgeSLAM::TrackPoint();
-                 if(pRefFrame->is_in_frustum(pMP, pTP,0.5)){
-                    pLocal->mvpMapPoints.push_back(pMP);
-                    pLocal->mvpTrackPoints.push_back(pTP);
-                    spMPs.insert(pMP);
-                }
-            }
-            last = ref;
-        }
-
-        ////delete ref frame
-        if(ref){
-            auto vpMPs = ref->mvpMapPoints;
-            for(int i =0; i < ref->N; i++){
-                auto pMP = vpMPs[i];
-                if(!pMP || pMP->isBad()){
-                    continue;
-                }
-                pMP->EraseObservation(ref);
-            }
-            last->mpParent = nullptr;
-            delete ref;
-            //ofile<<"delete end"<<std::endl;
-        }
-
-        pMap->SetReferenceFrame(pRefFrame);
-        pMap->SetLocalMap(pLocal);
-        WriteLog("SetReference::End");
-        f1.release();
-    }
-    void InsertData(int id){
-        std::unique_lock<std::mutex> lock(mMutexDatas);
-        listDatas.push_back(id);
-    }
-    void RefThreadRun(){
-        while(true){
-            if(CheckNewData()){
-                ProcessNewData();
-            }
-        }
-    }
-
-
-
     void SetPath(char* path) {
         strPath = std::string(path);
         std::stringstream ss;
         ss << strPath << "/debug.txt";
         strLogFile = strPath+"/debug.txt";
     }
-
 
     void SetDataFromUnity(void* data, char* ckeyword, int len, int strlen){
         cv::Mat tempData(len,1,CV_8UC1,data);
@@ -214,6 +134,7 @@ extern "C" {
             UnityData[keyword] = tempData;
         }
     }
+
     cv::Mat GetDataFromUnity(std::string keyword){
             std::unique_lock < std::mutex> lock(mMutexUnityData);
             return UnityData[keyword];
@@ -240,7 +161,6 @@ extern "C" {
         mnLevel = nlevel;
         mfScale = fscale;
 
-        mptRefThread = new std::thread(RefThreadRun);
         POOL = new ThreadPool::ThreadPool(24);
 
         pDetector = new EdgeSLAM::ORBDetector(nfeature,fscale,nlevel);
@@ -300,6 +220,9 @@ extern "C" {
         pTracker->mTrackState = EdgeSLAM::TrackingState::NotEstimated;
         mapContentInfos.clear();
         LabeledImage = cv::Mat::zeros(0,0,CV_8UC4);
+
+        cvFlows.Release();
+        cvObjects.Release();
     }
 
     void* imuAddr;
@@ -310,6 +233,53 @@ extern "C" {
         bIMU = bimu;
 	}
 
+    int scale = 16;
+    cv::Mat prevGray = cv::Mat::zeros(0,0,CV_8UC1);
+    //https://learnopencv.com/optical-flow-in-opencv/
+
+    void DenseFlow(int id, cv::Mat prev, cv::Mat curr){
+        std::stringstream ss;
+        ss<<"DenseFlow::Start::!!!!!! "<<id;
+        WriteLog(ss.str());
+        std::chrono::high_resolution_clock::time_point s1 = std::chrono::high_resolution_clock::now();
+
+        cv::Mat flow;
+		cv::calcOpticalFlowFarneback(prev, curr, flow, 0.5, 3, 15, 3, 5, 1.1, 0);
+        cvFlows.Update(id, flow);
+        mnCurrFrameID = id;
+
+        std::chrono::high_resolution_clock::time_point s2 = std::chrono::high_resolution_clock::now();
+		auto d = std::chrono::duration_cast<std::chrono::milliseconds>(s2 - s1).count();
+		float t = d / 1000.0;
+
+        /*
+        // Visualization part
+        cv::Mat flow_parts[2];
+        cv::split(flow, flow_parts);
+        // Convert the algorithm's output into Polar coordinates
+        cv::Mat magnitude, angle, magn_norm;
+        cv::cartToPolar(flow_parts[0], flow_parts[1], magnitude, angle, true);
+        cv::normalize(magnitude, magn_norm, 0.0f, 1.0f, cv::NORM_MINMAX);
+        angle *= ((1.f / 360.f) * (180.f / 255.f));
+        // Build hsv image
+        cv::Mat _hsv[3], hsv, hsv8, bgr;
+        _hsv[0] = angle;
+        _hsv[1] = cv::Mat::ones(angle.size(), CV_32FC1);
+        _hsv[2] = magn_norm;
+        cv::merge(_hsv, 3, hsv);
+        hsv.convertTo(hsv8, CV_8UC1, 255.0);
+        // Display the results
+        cvtColor(hsv8, bgr, cv::COLOR_HSV2BGR);
+		ss.str("");
+        ss<<strPath<<"/denseflow.jpg";
+        cv::imwrite(ss.str(), bgr);
+        */
+
+        ss.str("");
+		ss<<"DenseFlow::End::!!!!!! "<<t;
+        WriteLog(ss.str());
+    }
+
     int SetFrame(void* data, int id, double ts) {
         //ofile.open(strLogFile.c_str(), std::ios_base::out | std::ios_base::app);
         //ofile<<"Frame start"<<std::endl;
@@ -317,10 +287,17 @@ extern "C" {
         cv::Mat gray;
         bool res = true;
         cv::Mat frame = cv::Mat(mnHeight, mnWidth, CV_8UC4, data);
-        //cv::cvtColor(frame, frame, cv::COLOR_BGRA2RGBA);
+        //cv::cvtColor(frame, frame, cv::COLO  R_BGRA2RGBA);
         cv::flip(frame, frame,0);
         cv::cvtColor(frame, gray, cv::COLOR_BGRA2GRAY);//COLOR_BGRA2GRAY, COLOR_RGBA2GRAY
 
+        cv::Mat gray_resized;
+        cv::resize(gray, gray_resized, gray.size() / scale);
+        if(prevGray.rows > 0){
+            POOL->EnqueueJob(DenseFlow, id, prevGray.clone(), gray_resized.clone());
+            prevGray.release();
+        }
+        prevGray = gray_resized.clone();
         /*
         std::stringstream ss;
         ss<<strPath<<"/color.jpg";
@@ -342,6 +319,7 @@ extern "C" {
         //ofile<<"SetFrame="<<t_total<<std::endl;
         //ofile.close();
         WriteLog("SetFrame::End");
+
         return pCurrFrame->N;
     }
     void SetLocalMap(){
@@ -349,7 +327,7 @@ extern "C" {
     }
 
     void CreateReferenceFrame(int id){
-        WriteLog("SetReference::Start");
+        WriteLog("SetReference::Start!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
         cv::Mat f1 = GetDataFromUnity("ReferenceFrame");
         auto pRefFrame = new EdgeSLAM::RefFrame(pCamera, (float*)f1.data);
         cv::Mat img = pMap->GetImage(id);
@@ -405,27 +383,117 @@ extern "C" {
         pMap->SetReferenceFrame(pRefFrame);
         pMap->SetLocalMap(pLocal);
         f1.release();
-        WriteLog("SetReference::End");
+        WriteLog("SetReference::End!!!!!!!!!!!!!!!!!!!");
     }
 
     void SetReferenceFrame(int id) {
-        //InsertData(id);
         POOL->EnqueueJob(CreateReferenceFrame, id);
 	}
-    void AddObjectInfos(){
-        std::unique_lock<std::mutex> lock(mMutexObjectInfo);
+
+	void AddObjectInfo(int id){
+
+        std::stringstream ss;
+        ss<<"ObjectProcessing::Start::!!!!!! "<<id;
+        WriteLog(ss.str());
+        std::chrono::high_resolution_clock::time_point s1 = std::chrono::high_resolution_clock::now();
+
+        //std::unique_lock<std::mutex> lock(mMutexObjectInfo);
         cv::Mat tdata = GetDataFromUnity("ObjectDetection");
         int n = tdata.rows/24;
-        ObjectInfo = cv::Mat(n, 6, CV_32FC1, tdata.data);
-        //float* data = (float*)tdata.data;
-        //ObjectInfo =
+        cv::Mat obj = cv::Mat(n, 6, CV_32FC1, tdata.data);
+
+        std::map<int, cv::Mat> flows = cvFlows.Get();
+        cvFlows.Erase(id);
+        int nMaxID = mnCurrFrameID.load();
+
+        int SX = mnWidth/scale;
+        int SY = mnHeight/scale;
+
+        std::vector<cv::Point2f> vecPTs;
+
+        for(int j = 0, jend = obj.rows; j < jend ;j++){
+            cv::Point2f left(obj.at<float>(j, 2), obj.at<float>(j, 3));
+            cv::Point2f right(obj.at<float>(j, 4), obj.at<float>(j, 5));
+
+            for(int x = left.x, xend = right.x; x < xend; x+=scale){
+                for(int y = left.y, yend = right.y; y < yend; y+=scale){
+                    int sx = x/scale;
+                    int sy = y/scale;
+                    if (sx <= 0 || sy <= 0 || sx >= SX || sy >= SY )
+                        continue;
+                    vecPTs.push_back(cv::Point2f(sx,sy));
+                }
+            }
+        }
+
+        for(int i = id; i <= nMaxID; i++){
+            if(!flows.count(i))
+                continue;
+            auto flow = flows[i];
+
+            for(int j = 0; j < vecPTs.size(); j++){
+                auto pt = vecPTs[j];
+                if(pt.x < 0.0)
+                    continue;
+                if(pt.x >= SX || pt.y >= SY || pt.x <=0 || pt.y <= 0)
+                {
+                    vecPTs[j].x = -1.0;
+                    //ss.str("");
+                    //ss<<"A = "<<pt.x<<" "<<pt.y;
+                    //WriteLog(ss.str());
+                    continue;
+                }
+                vecPTs[j].x = flow.at<cv::Vec2f>(pt).val[0]+pt.x;
+                vecPTs[j].y = flow.at<cv::Vec2f>(pt).val[1]+pt.y;
+
+                /*
+                if (sx <= 0 || sy <= 0 || sx >= SX || sy >= SY )
+                {
+                    sx = -1.0;
+                    //continue;
+                }
+                vecPTs[j].x = sx;
+                vecPTs[j].y = sy;
+                */
+            }
+        }
+
+        cvObjects.Clear();
+        int n1 = 0;
+        int n2 = 0;
+        for(int j = 0; j < vecPTs.size(); j++){
+            n1++;
+            auto pt = vecPTs[j];
+            if(pt.x < 0.0){
+                n2++;
+                continue;
+            }
+            cvObjects.push_back(pt);
+        }
+
+        std::chrono::high_resolution_clock::time_point s2 = std::chrono::high_resolution_clock::now();
+        auto d = std::chrono::duration_cast<std::chrono::milliseconds>(s2 - s1).count();
+        float t = d / 1000.0;
+        ss.str("");
+        ss<<"ObjectProcessing::End::!!!!!!  "<<cvObjects.size()<<", "<<n1<<" "<<n2<<", "<<t;
+        WriteLog(ss.str());
+
+	}
+    void AddObjectInfos(int id){
+        POOL->EnqueueJob(AddObjectInfo, id);
     }
 
-	void AddContentInfo(int id, float x, float y, float z) {
-		cv::Mat pos = (cv::Mat_<float>(3, 1) <<x, y, z);
+    void AddContent(int id, float x, float y, float z){
+        cv::Mat pos = (cv::Mat_<float>(3, 1) <<x, y, z);
 		std::unique_lock<std::mutex> lock(mMutexContentInfo);
 		mapContentInfos.insert(std::make_pair(id, pos));
 	}
+
+	void AddContentInfo(int id, float x, float y, float z) {
+        POOL->EnqueueJob(AddContent, id, x, y, z);
+	}
+
+
 
 	bool Track(void* data) {
         //ofile.open(strLogFile.c_str(), std::ios_base::out | std::ios_base::app);
@@ -547,6 +615,7 @@ extern "C" {
 		colors2[3] = colors[2];//0
 		cv::merge(colors2, img);
 
+        /*
         cv::Mat obj;
         {
             std::unique_lock<std::mutex> lock(mMutexObjectInfo);
@@ -557,6 +626,20 @@ extern "C" {
             cv::Point2f left(obj.at<float>(j, 2), obj.at<float>(j, 3));
             cv::Point2f right(obj.at<float>(j, 4), obj.at<float>(j, 5));
             cv::rectangle(img,left, right, cv::Scalar(255, 255, 255, 255));
+        }
+        */
+        auto vecPTs = cvObjects.get();
+        std::stringstream ss;
+        ss<<"VIS = "<<vecPTs.size();
+        WriteLog(ss.str());
+
+        for(int j = 0; j < vecPTs.size(); j++){
+            auto pt = vecPTs[j];
+            if(pt.x < 0.0)
+                continue;
+            float x = pt.x*scale;
+            float y = pt.y*scale;
+            cv::circle(img, cv::Point2f(x,y), 3, cv::Scalar(255, 0, 255, 255), -1);
         }
 
         cv::Mat labeled;
