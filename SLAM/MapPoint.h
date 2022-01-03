@@ -11,23 +11,7 @@ namespace EdgeSLAM {
 	class Frame;
 	class ORBDetector;
 	class Map;
-	class TrackPoint {
-	public:
-		TrackPoint();
-		TrackPoint(float x, float y, float angle, float scale);
-		virtual ~TrackPoint();
-	public:
-		float mTrackProjX;
-		float mTrackProjY;
-		float mTrackProjXR;
-		bool mbTrackInView;
-		int mnTrackScaleLevel;
-		float mTrackViewCos;
-		long unsigned int mnTrackReferenceForFrame;
-		long unsigned int mnLastFrameSeen;
 
-	private:
-	};
 	class MapPoint {
 	public:
 		MapPoint();
@@ -43,6 +27,12 @@ namespace EdgeSLAM {
 
     public:
 	    int mnID;
+		float mTrackProjX;
+        float mTrackProjY;
+        bool mbTrackInView;
+        int mnTrackScaleLevel;
+        float mTrackViewCos;
+
 		static ORBDetector* Detector;
         static Map* MAP;
 
@@ -61,6 +51,7 @@ namespace EdgeSLAM {
 		bool IsInKeyFrame(RefFrame *pKF);
         void SetBadFlag();
         bool isBad();
+
 	private:
 		cv::Mat mWorldPos, mNormalVector;
 		std::map<RefFrame*, size_t> mObservations;
@@ -73,6 +64,8 @@ namespace EdgeSLAM {
 
 		std::mutex mMutexPos;
 		std::mutex mMutexFeatures;
+
+
 
 	};
 }

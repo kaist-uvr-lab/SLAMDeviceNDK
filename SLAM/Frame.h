@@ -13,7 +13,6 @@ namespace EdgeSLAM {
 	class CameraPose;
 	class ORBDetector;
 	class MapPoint;
-	class TrackPoint;
 	class Frame {
 	public:
 		Frame();
@@ -24,7 +23,7 @@ namespace EdgeSLAM {
 		virtual ~Frame();
 
 		void reset_map_points();
-		bool is_in_frustum(MapPoint* pMP, TrackPoint* pTP, float viewingCosLimit);
+		bool is_in_frustum(MapPoint* pMP, float viewingCosLimit);
 
 		int N;
 		cv::Mat K, D;

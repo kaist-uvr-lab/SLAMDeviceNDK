@@ -14,7 +14,6 @@ namespace EdgeSLAM {
 	class CameraPose;
 	class ORBDetector;
 	class MapPoint;
-	class TrackPoint;
 	class RefFrame {
 	public:
 		RefFrame();
@@ -27,7 +26,7 @@ namespace EdgeSLAM {
 		//int TrackedMapPoints(const int &minObs);
 		void EraseMapPointMatch(const size_t &idx);
         void UpdateMapPoints();
-        bool is_in_frustum(MapPoint* pMP, TrackPoint* pTP, float viewingCosLimit);
+        bool is_in_frustum(MapPoint* pMP, float viewingCosLimit);
 	public:
 		static bool weightComp(int a, int b) {
 			return a>b;

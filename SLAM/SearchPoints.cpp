@@ -253,7 +253,7 @@ namespace EdgeSLAM {
 		return nmatches;
 	}
 
-	int SearchPoints::SearchMapByProjection(Frame *F, const std::vector<MapPoint*> &vpMapPoints, const std::vector<TrackPoint*> &vpTrackPoints, float thMaxDesc, float thMinDesc, float thRadius, float thMatchRatio, bool bCheckOri)
+	int SearchPoints::SearchMapByProjection(Frame *F, const std::vector<MapPoint*> &vpMapPoints, float thMaxDesc, float thMinDesc, float thRadius, float thMatchRatio, bool bCheckOri)
 	{
 		int nmatches = 0;
 		const bool bFactor = thRadius != 1.0;
@@ -261,21 +261,20 @@ namespace EdgeSLAM {
 		for (size_t iMP = 0; iMP<vpMapPoints.size(); iMP++)
 		{
 			MapPoint* pMP = vpMapPoints[iMP];
-			TrackPoint* pTP = vpTrackPoints[iMP];
 
-			if (!pTP->mbTrackInView) {
+			if (!pMP->mbTrackInView) {
 				continue;
 			}
-			const int &nPredictedLevel = pTP->mnTrackScaleLevel;
+			const int &nPredictedLevel = pMP->mnTrackScaleLevel;
 
 			// The size of the window will depend on the viewing direction
-			float r = RadiusByViewingCos(pTP->mTrackViewCos);
+			float r = RadiusByViewingCos(pMP->mTrackViewCos);
 
 			if (bFactor)
 				r *= thRadius;
 
 			const std::vector<size_t> vIndices =
-				F->GetFeaturesInArea(pTP->mTrackProjX, pTP->mTrackProjY, r*F->mvScaleFactors[nPredictedLevel], nPredictedLevel - 1, nPredictedLevel);
+				F->GetFeaturesInArea(pMP->mTrackProjX, pMP->mTrackProjY, r*F->mvScaleFactors[nPredictedLevel], nPredictedLevel - 1, nPredictedLevel);
 
 			if (vIndices.empty()) {
 				continue;

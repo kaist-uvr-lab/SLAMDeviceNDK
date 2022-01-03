@@ -9,7 +9,6 @@ namespace EdgeSLAM {
 	class Frame;
 	class RefFrame;
 	class MapPoint;
-	class TrackPoint;
 	class ORBDetector;
 	class MotionModel;
 	class LocalMap;
@@ -28,7 +27,7 @@ namespace EdgeSLAM {
 		int TrackWithReferenceFrame(RefFrame* ref, Frame* cur, float thMaxDesc, float thMinDesc);
 
 		int DiscardOutliers(Frame* cur);
-		int UpdateVisiblePoints(Frame* cur, std::vector<MapPoint*> vpLocalMPs, std::vector<TrackPoint*> vpLocalTPs);
+		int UpdateVisiblePoints(Frame* cur, std::vector<MapPoint*> vpLocalMPs);
 		int UpdateFoundPoints(Frame* cur, bool bOnlyTracking = false);
 		//bool NeedNewKeyFrame(Frame* cur, RefFrame* ref, int nKFs, int nMatchesInliers);
 

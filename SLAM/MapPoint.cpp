@@ -5,9 +5,6 @@
 #include "Map.h"
 
 namespace EdgeSLAM {
-	TrackPoint::TrackPoint() :mbTrackInView(false) {}
-	TrackPoint::TrackPoint(float x, float y, float angle, float scale) : mbTrackInView(false), mTrackProjX(x), mTrackProjY(y), mTrackViewCos(angle), mnTrackScaleLevel(scale) {}
-	TrackPoint::~TrackPoint() {}
 
 	MapPoint::MapPoint() {}
 	MapPoint::MapPoint(int id, float _x, float _y, float _z): mnID(id), mpRefKF(nullptr), mbBad(false), mfMinDistance(0), mfMaxDistance(0), nObs(0){

@@ -10,7 +10,7 @@ namespace EdgeSLAM {
 	class Frame;
 	class RefFrame;
 	class MapPoint;
-	class TrackPoint;
+
 	class LocalMap;
 	class Map {
 	public:

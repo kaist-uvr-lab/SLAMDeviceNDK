@@ -58,7 +58,7 @@ namespace EdgeSLAM {
 	}
 	int Tracker::TrackWithLocalMap(Frame* cur, LocalMap* pLocal, float thMaxDesc, float thMinDesc) {
 
-        int nMatch = UpdateVisiblePoints(cur, pLocal->mvpMapPoints, pLocal->mvpTrackPoints);
+        int nMatch = UpdateVisiblePoints(cur, pLocal->mvpMapPoints);
         std::ofstream ofile;
         //ofile.open(path.c_str(), std::ios_base::out | std::ios_base::app);
         //ofile<<"1"<<std::endl;
@@ -69,7 +69,7 @@ namespace EdgeSLAM {
 		if (cur->mnFrameID < mnLastRelocFrameId + 2)
 			thRadius = 5.0;
         //ofile<<"2"<<std::endl;
-		int a = SearchPoints::SearchMapByProjection(cur, pLocal->mvpMapPoints, pLocal->mvpTrackPoints, thMaxDesc, thMinDesc, thRadius);
+		int a = SearchPoints::SearchMapByProjection(cur, pLocal->mvpMapPoints, thMaxDesc, thMinDesc, thRadius);
         //ofile<<"3"<<std::endl;
 		Optimizer::PoseOptimization(cur);
         //ofile<<"4"<<std::endl;
@@ -118,7 +118,7 @@ namespace EdgeSLAM {
 		 }
 		 return nres;
 	 }
-	 int Tracker::UpdateVisiblePoints(Frame* cur, std::vector<MapPoint*> vpLocalMPs, std::vector<TrackPoint*> vpLocalTPs) {
+	 int Tracker::UpdateVisiblePoints(Frame* cur, std::vector<MapPoint*> vpLocalMPs) {
 
 		 for (int i = 0; i<cur->N; i++)
 		 {
@@ -140,14 +140,13 @@ namespace EdgeSLAM {
 			 //for (auto vit = vpLocalMPs.begin(), vend = vpLocalMPs.end(); vit != vend; vit++)
 		 {
 			 MapPoint* pMP = vpLocalMPs[i];
-			 TrackPoint* pTP = vpLocalTPs[i];
 
 			 if (cur->mspMapPoints.count(pMP))
 				 continue;
 			 nTrial++;
 
 			 // Project (this fills MapPoint variables for matching)
-			 if (cur->is_in_frustum(pMP, pTP, 0.5))
+			 if (cur->is_in_frustum(pMP, 0.5))
 			 {
 				 nToMatch++;
 			 }

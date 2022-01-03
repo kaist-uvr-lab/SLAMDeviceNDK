@@ -169,7 +169,7 @@ namespace EdgeSLAM {
 	    mvpMapPoints[idx] = nullptr;
 	}
 
-	bool RefFrame::is_in_frustum(MapPoint* pMP, TrackPoint* pTP, float viewingCosLimit) {
+	bool RefFrame::is_in_frustum(MapPoint* pMP, float viewingCosLimit) {
 
         cv::Mat P = pMP->GetWorldPos();
         cv::Mat Rw = mpCamPose->GetRotation();
@@ -210,15 +210,16 @@ namespace EdgeSLAM {
         if (viewCos<viewingCosLimit)
             return false;
 
+/*
         //// Predict scale in the image
         const int nPredictedLevel = pMP->PredictScale(dist, this);
 
-        pTP->mbTrackInView = true;
-        pTP->mTrackProjX = u;
-        pTP->mTrackProjY = v;
-        pTP->mnTrackScaleLevel = nPredictedLevel;
-        pTP->mTrackViewCos = viewCos;
-
+        pMP->mbTrackInView = true;
+        pMP->mTrackProjX = u;
+        pMP->mTrackProjY = v;
+        pMP->mnTrackScaleLevel = nPredictedLevel;
+        pMP->mTrackViewCos = viewCos;
+*/
         return true;
     }
 

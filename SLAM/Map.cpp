@@ -40,7 +40,6 @@ namespace EdgeSLAM {
     void Map::GetLocalMap(LocalMap* pLocal){
         std::unique_lock<std::mutex> lock(mMutexLocalMap);
         pLocal->mvpMapPoints   = std::vector<MapPoint*>  (mpLocalMap->mvpMapPoints.begin(),   mpLocalMap->mvpMapPoints.end());
-        pLocal->mvpTrackPoints = std::vector<TrackPoint*>(mpLocalMap->mvpTrackPoints.begin(), mpLocalMap->mvpTrackPoints.end());
     }
     bool Map::CheckMapPoint(int id){
         std::unique_lock<std::mutex> lock(mMutexMapPoints);

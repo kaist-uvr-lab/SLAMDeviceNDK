@@ -10,14 +10,12 @@ namespace EdgeSLAM {
 	class Frame;
 	class RefFrame;
 	class MapPoint;
-	class TrackPoint;
 	class LocalMap {
 	public:
 		LocalMap();
 		virtual ~LocalMap();
 	public:
 		std::vector<MapPoint*> mvpMapPoints;
-		std::vector<TrackPoint*> mvpTrackPoints;
 	};
 }
 
