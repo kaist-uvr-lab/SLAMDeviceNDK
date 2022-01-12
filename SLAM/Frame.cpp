@@ -126,7 +126,7 @@ namespace EdgeSLAM {
 	}
 
 	bool Frame::is_in_frustum(MapPoint* pMP, float viewingCosLimit) {
-
+        pMP->mbTrackInView = false;
 		cv::Mat P = pMP->GetWorldPos();
 		cv::Mat Rw = mpCamPose->GetRotation();
 		cv::Mat tw = mpCamPose->GetTranslation();
@@ -282,7 +282,7 @@ namespace EdgeSLAM {
 		mpCamPose->SetPose(Tcw);
 	}
 	cv::Mat Frame::GetPose() {
-		return mpCamPose->GetPose();
+		return mpCamPose->GetPose().clone();
 	}
 	cv::Mat Frame::GetPoseInverse() {
 		return mpCamPose->GetInversePose();

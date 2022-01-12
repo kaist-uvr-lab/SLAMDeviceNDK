@@ -42,7 +42,7 @@ namespace EdgeSLAM {
 			for (int i = 0; i<N; i++)
 			{
 				MapPoint* pMP = pFrame->mvpMapPoints[i];
-				if (pMP)
+				if (pMP && !pMP->isBad())
 				{
 					nInitialCorrespondences++;
 					pFrame->mvbOutliers[i] = false;

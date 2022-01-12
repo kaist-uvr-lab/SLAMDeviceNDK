@@ -1,7 +1,16 @@
-#include <GridCell.h>
+#include "GridCell.h"
 
-namespace SemanticSLAM {
-	
+namespace EdgeSLAM {
+	GridCell::GridCell(){
+	    mpObject = new Label();
+	    mpSegLabel = new Label();
+	}
+    GridCell::~GridCell(){
+        delete mpObject;
+        delete mpSegLabel;
+        mapObservation.Release();
+    }
+
 	Label::Label() :mnLabel(0), mnCount(0) {
 		matLabels = cv::Mat::zeros(200, 1, CV_16UC1);
 	}
@@ -11,6 +20,7 @@ namespace SemanticSLAM {
 	Label::~Label() {
 		matLabels.release();
 	}
+
 	void Label::Update(int nLabel) {
 
 		std::unique_lock<std::mutex> lock(mMutexObject);
@@ -42,13 +52,6 @@ namespace SemanticSLAM {
 		std::unique_lock<std::mutex> lock(mMutexObject);
 		return matLabels.at<ushort>(l);
 	}
-	
-	GridCell::GridCell(){}
-	GridCell::~GridCell(){
-		delete mpObject;
-		delete mpSegLabel;
-		mapObservation.Release();
-	}
 
 	void GridCell::AddObservation(GridFrame* pGF, int idx){
 		mapObservation.Update(pGF, idx);
@@ -65,31 +68,6 @@ namespace SemanticSLAM {
 	}
 	bool GridCell::isBad(){
 		return mbBad.load();
-	}
-
-	GridFrame::GridFrame(){
-		mGrid = std::vector<std::vector<GridCell*>>(10);
-		for (int i = 0, iend = mGrid.size(); i < iend; i++)
-			mGrid[i] = std::vector<GridCell*>(10, nullptr);
-	}
-	GridFrame::GridFrame(int row, int col) {
-		mGrid = std::vector<std::vector<GridCell*>>(row);
-		for (int i = 0, iend = mGrid.size(); i < iend; i++)
-			mGrid[i] = std::vector<GridCell*>(col, nullptr);
-	}
-	GridFrame::~GridFrame(){
-		for (int i = 0, iend = mGrid.size(); i < iend; i++) {
-			for (int j = 0, jend = mGrid[i].size(); j < jend; j++) {
-				auto pGC = mGrid[i][j];
-				if (!pGC)
-					continue;
-				pGC->EraseObservation(this);
-				if (pGC->isBad())
-					delete pGC;
-			}
-			std::vector<GridCell*>().swap(mGrid[i]);
-		}
-		std::vector<std::vector<GridCell*>>().swap(mGrid);
 	}
 
 }

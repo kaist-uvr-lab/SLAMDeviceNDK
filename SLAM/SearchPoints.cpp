@@ -19,12 +19,6 @@ namespace EdgeSLAM {
         cv::Mat Tcw = curr->GetPose();
         const cv::Mat Rcw = Tcw.rowRange(0, 3).colRange(0, 3);
         const cv::Mat tcw = Tcw.rowRange(0, 3).col(3);
-        const cv::Mat twc = -Rcw.t()*tcw;
-
-        cv::Mat Tlw = ref->GetPose();
-        const cv::Mat Rlw = Tlw.rowRange(0, 3).colRange(0, 3);
-        const cv::Mat tlw = Tlw.rowRange(0, 3).col(3);
-        const cv::Mat tlc = Rlw*twc + tlw;
 
         for (int i = 0; i<ref->N; i++)
 		{
@@ -69,9 +63,9 @@ namespace EdgeSLAM {
                 for (std::vector<size_t>::const_iterator vit = vIndices2.begin(), vend = vIndices2.end(); vit != vend; vit++)
                 {
                     const size_t i2 = *vit;
-                    if (curr->mvpMapPoints[i2])
-                        if (curr->mvpMapPoints[i2]->Observations()>0)
-                            continue;
+                    auto pMP2 = curr->mvpMapPoints[i2];
+                    if (pMP2 && !pMP2->isBad() && pMP2->Observations() > 0)
+                        continue;
 
                     const cv::Mat &d = curr->mDescriptors.row(i2);
 
@@ -130,6 +124,10 @@ namespace EdgeSLAM {
 
 	int SearchPoints::SearchFrameByProjection(Frame* prev, Frame* curr, float thMaxDesc, float thMinDesc, float thProjection, bool bCheckOri) {
 
+        std::ofstream ofile;
+        ofile.open(LogFile.c_str(), std::ios_base::out | std::ios_base::app);
+        ofile<<"SearchPoints::SearchFrameByProjection::a"<<std::endl;
+
 		int nmatches = 0;
 
 		// Rotation Histogram (to check rotation consistency)
@@ -142,18 +140,23 @@ namespace EdgeSLAM {
 		cv::Mat Tcw = curr->GetPose();
 		const cv::Mat Rcw = Tcw.rowRange(0, 3).colRange(0, 3);
 		const cv::Mat tcw = Tcw.rowRange(0, 3).col(3);
-		const cv::Mat twc = -Rcw.t()*tcw;
 
-		cv::Mat Tlw = prev->GetPose();
-		const cv::Mat Rlw = Tlw.rowRange(0, 3).colRange(0, 3);
-		const cv::Mat tlw = Tlw.rowRange(0, 3).col(3);
-		const cv::Mat tlc = Rlw*twc + tlw;
+        ofile<<"SearchPoints::SearchFrameByProjection::b"<<std::endl;
+        std::stringstream ss;
+        ss<<Rcw<<std::endl;
+        ofile<<ss.str();
+        ss.str("");
+        ss<<tcw<<std::endl;
+        ofile<<ss.str();
+        ss.str("");
+        ss<<Tcw.t()<<std::endl;
+        ofile<<ss.str();
 
 		for (int i = 0; i<prev->N; i++)
 		{
 			MapPoint* pMP = prev->mvpMapPoints[i];
 
-			if (pMP)
+			if (pMP && !pMP->isBad())
 			{
 				if (!prev->mvbOutliers[i])
 				{
@@ -194,9 +197,9 @@ namespace EdgeSLAM {
 					for (std::vector<size_t>::const_iterator vit = vIndices2.begin(), vend = vIndices2.end(); vit != vend; vit++)
 					{
 						const size_t i2 = *vit;
-						if (curr->mvpMapPoints[i2])
-							if (curr->mvpMapPoints[i2]->Observations()>0)
-								continue;
+						auto pMP2 = curr->mvpMapPoints[i2];
+						if (pMP2 && !pMP2->isBad() && pMP2->Observations()>0)
+                            continue;
 
 						const cv::Mat &d = curr->mDescriptors.row(i2);
 
@@ -229,7 +232,7 @@ namespace EdgeSLAM {
 				}
 			}
 		}
-
+        ofile<<"SearchPoints::SearchFrameByProjection::c"<<std::endl;
 		if (bCheckOri)
 		{
 			int ind1 = -1;
@@ -250,18 +253,26 @@ namespace EdgeSLAM {
 				}
 			}
 		}
+		ofile<<"SearchPoints::SearchFrameByProjection::d"<<std::endl;
+		ofile.close();
 		return nmatches;
 	}
 
 	int SearchPoints::SearchMapByProjection(Frame *F, const std::vector<MapPoint*> &vpMapPoints, float thMaxDesc, float thMinDesc, float thRadius, float thMatchRatio, bool bCheckOri)
 	{
+
+	    std::ofstream ofile;
+        ofile.open(LogFile.c_str(), std::ios_base::out | std::ios_base::app);
+        ofile<<"SearchPoints::SearchMapByProjection::a"<<std::endl;
+
 		int nmatches = 0;
 		const bool bFactor = thRadius != 1.0;
 
 		for (size_t iMP = 0; iMP<vpMapPoints.size(); iMP++)
 		{
 			MapPoint* pMP = vpMapPoints[iMP];
-
+            if(!pMP || pMP->isBad())
+                continue;
 			if (!pMP->mbTrackInView) {
 				continue;
 			}
@@ -291,8 +302,8 @@ namespace EdgeSLAM {
 			for (std::vector<size_t>::const_iterator vit = vIndices.begin(), vend = vIndices.end(); vit != vend; vit++)
 			{
 				const size_t idx = *vit;
-
-				if (F->mvpMapPoints[idx] && F->mvpMapPoints[idx]->Observations()>0) {
+                auto pMP = F->mvpMapPoints[idx];
+				if (pMP && !pMP->isBad() && pMP->Observations()>0) {
 					continue;
 				}
 				const cv::Mat &d = F->mDescriptors.row(idx);
@@ -323,131 +334,8 @@ namespace EdgeSLAM {
 				nmatches++;
 			}
 		}
-
-		return nmatches;
-	}
-
-	int SearchPoints::SearchFrameByBoW(RefFrame* pKF, Frame *F, std::vector<MapPoint*> &vpMapPointMatches, float thMinDesc, float thMatchRatio, bool bCheckOri) {
-		
-		const auto vpMapPointsKF = pKF->mvpMapPoints;
-
-		vpMapPointMatches = std::vector<MapPoint*>(F->N, static_cast<MapPoint*>(nullptr));
-
-		const DBoW3::FeatureVector &vFeatVecKF = pKF->mFeatVec;
-
-		int nmatches = 0;
-
-		std::vector<int> rotHist[HISTO_LENGTH];
-		const float factor = 1.0f / HISTO_LENGTH;
-
-		// We perform the matching over ORB that belong to the same vocabulary node (at a certain level)
-		DBoW3::FeatureVector::const_iterator KFit = vFeatVecKF.begin();
-		DBoW3::FeatureVector::const_iterator Fit = F->mFeatVec.begin();
-		DBoW3::FeatureVector::const_iterator KFend = vFeatVecKF.end();
-		DBoW3::FeatureVector::const_iterator Fend = F->mFeatVec.end();
-
-		while (KFit != KFend && Fit != Fend)
-		{
-			if (KFit->first == Fit->first)
-			{
-				const std::vector<unsigned int> vIndicesKF = KFit->second;
-				const std::vector<unsigned int> vIndicesF = Fit->second;
-
-				for (size_t iKF = 0; iKF<vIndicesKF.size(); iKF++)
-				{
-					const unsigned int realIdxKF = vIndicesKF[iKF];
-
-					MapPoint* pMP = vpMapPointsKF[realIdxKF];
-
-					if (!pMP)
-						continue;
-
-					const cv::Mat &dKF = pKF->mDescriptors.row(realIdxKF);
-
-					float bestDist1 = 256.0;
-					float bestDist2 = 256.0;
-					int bestIdxF = -1;
-
-					for (size_t iF = 0; iF<vIndicesF.size(); iF++)
-					{
-						const unsigned int realIdxF = vIndicesF[iF];
-
-						if (vpMapPointMatches[realIdxF])
-							continue;
-
-						const cv::Mat &dF = F->mDescriptors.row(realIdxF);
-
-						const float dist = Detector->CalculateDescDistance(dKF, dF);
-
-						if (dist<bestDist1)
-						{
-							bestDist2 = bestDist1;
-							bestDist1 = dist;
-							bestIdxF = realIdxF;
-						}
-						else if (dist<bestDist2)
-						{
-							bestDist2 = dist;
-						}
-					}
-
-					if (bestDist1 <= thMinDesc)
-					{
-						if (static_cast<float>(bestDist1)<thMatchRatio*static_cast<float>(bestDist2))
-						{
-							vpMapPointMatches[bestIdxF] = pMP;
-
-							const cv::KeyPoint &kp = pKF->mvKeysUn[realIdxKF];
-
-							if (bCheckOri)
-							{
-								float rot = kp.angle - F->mvKeys[bestIdxF].angle;
-								if (rot<0.0)
-									rot += 360.0f;
-								int bin = round(rot*factor);
-								if (bin == HISTO_LENGTH)
-									bin = 0;
-								assert(bin >= 0 && bin<HISTO_LENGTH);
-								rotHist[bin].push_back(bestIdxF);
-							}
-							nmatches++;
-
-						}
-					}
-
-				}
-
-				KFit++;
-				Fit++;
-			}
-			else if (KFit->first < Fit->first)
-			{
-				KFit = vFeatVecKF.lower_bound(Fit->first);
-			}
-			else
-			{
-				Fit = F->mFeatVec.lower_bound(KFit->first);
-			}
-		}
-		if (bCheckOri)
-		{
-			int ind1 = -1;
-			int ind2 = -1;
-			int ind3 = -1;
-
-			ComputeThreeMaxima(rotHist, HISTO_LENGTH, ind1, ind2, ind3);
-
-			for (int i = 0; i<HISTO_LENGTH; i++)
-			{
-				if (i == ind1 || i == ind2 || i == ind3)
-					continue;
-				for (size_t j = 0, jend = rotHist[i].size(); j<jend; j++)
-				{
-					vpMapPointMatches[rotHist[i][j]] = static_cast<MapPoint*>(nullptr);
-					nmatches--;
-				}
-			}
-		}
+        ofile<<"SearchPoints::SearchMapByProjection::b"<<std::endl;
+        ofile.close();
 		return nmatches;
 	}
 

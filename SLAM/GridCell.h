@@ -4,10 +4,11 @@
 
 #include <opencv2/opencv.hpp>
 #include <opencv2/core.hpp>
-#include <ConcurrentMap.h>
+#include "ConcurrentMap.h"
 #include <atomic>
 
-namespace SemanticSLAM {
+namespace EdgeSLAM {
+
 	class GridFrame;
 	class Label {
 	public:
@@ -40,19 +41,8 @@ namespace SemanticSLAM {
 		cv::Point2f pt;
 		ConcurrentMap<GridFrame*, int> mapObservation;
 		Label *mpObject, *mpSegLabel;
-	private:
-
 	};
 
-	class GridFrame {
-	public:
-		GridFrame();
-		GridFrame(int row, int col);
-		virtual ~GridFrame();
-	public:
-		std::vector<std::vector<GridCell*>> mGrid;
-	private:
-	};
 }
 
 

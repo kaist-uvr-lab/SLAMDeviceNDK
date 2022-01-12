@@ -17,7 +17,11 @@ LOCAL_SRC_FILES :=	$(LOCAL_PATH)/SLAM/UnityLibrary.cpp\
 	$(LOCAL_PATH)/SLAM/ORBExtractor.cpp\
 	$(LOCAL_PATH)/SLAM/RefFrame.cpp\
 	$(LOCAL_PATH)/SLAM/SearchPoints.cpp\
-	$(LOCAL_PATH)/SLAM/Tracker.cpp
+	$(LOCAL_PATH)/SLAM/Tracker.cpp\
+	$(LOCAL_PATH)/SLAM/GridCell.cpp\
+	$(LOCAL_PATH)/SLAM/GridFrame.cpp\
+	$(LOCAL_PATH)/SLAM/happyhttp.cpp\
+	$(LOCAL_PATH)/SLAM/WebAPI.cpp
 
 LOCAL_SHARED_LIBRARIES := g2o dbow3 opencv_java3
 LOCAL_CPPFLAGS  += -std=c++11

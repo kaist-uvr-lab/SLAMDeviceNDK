@@ -14,8 +14,8 @@ namespace EdgeSLAM {
 
 	int Tracker::TrackWithPrevFrame(Frame* prev, Frame* cur, float thMaxDesc, float thMinDesc) {
 		cur->reset_map_points();
-		int res = SearchPoints::SearchFrameByProjection(prev, cur, thMaxDesc, thMinDesc);
 
+		int res = SearchPoints::SearchFrameByProjection(prev, cur, thMaxDesc, thMinDesc);
 		if (res < 20) {
 			cur->reset_map_points();
 			res = SearchPoints::SearchFrameByProjection(prev, cur, thMaxDesc, thMinDesc, 30.0);
@@ -24,7 +24,6 @@ namespace EdgeSLAM {
 			return res;
 		}
 		int nopt = Optimizer::PoseOptimization(cur);
-		//int nmatchesMap = DiscardOutliers(cur);
 		return nopt;
 	}
 	int Tracker::TrackWithReferenceFrame(RefFrame* ref, Frame* cur, float thMaxDesc, float thMinDesc) {
@@ -57,52 +56,27 @@ namespace EdgeSLAM {
 		return nopt;
 	}
 	int Tracker::TrackWithLocalMap(Frame* cur, LocalMap* pLocal, float thMaxDesc, float thMinDesc) {
-
         int nMatch = UpdateVisiblePoints(cur, pLocal->mvpMapPoints);
-        std::ofstream ofile;
-        //ofile.open(path.c_str(), std::ios_base::out | std::ios_base::app);
-        //ofile<<"1"<<std::endl;
 		if (nMatch == 0)
 			return 0;
-
         float thRadius = 1.0;
 		if (cur->mnFrameID < mnLastRelocFrameId + 2)
 			thRadius = 5.0;
-        //ofile<<"2"<<std::endl;
 		int a = SearchPoints::SearchMapByProjection(cur, pLocal->mvpMapPoints, thMaxDesc, thMinDesc, thRadius);
-        //ofile<<"3"<<std::endl;
+		std::ofstream ofile;
+        ofile.open(path.c_str(), std::ios_base::out | std::ios_base::app);
+        ofile<<"Track::LocalMap::Optimize:Start"<<std::endl;
 		Optimizer::PoseOptimization(cur);
-        //ofile<<"4"<<std::endl;
-		/*
-		LocalMap* pLocalMap = new LocalCovisibilityMap();
-		std::vector<MapPoint*> vpLocalMPs;
-		std::vector<RefFrame*> vpLocalKFs;
-		std::vector<TrackPoint*> vpLocalTPs;
-		std::chrono::high_resolution_clock::time_point start = std::chrono::high_resolution_clock::now();
-
-		pLocalMap->UpdateLocalMap(cur, vpLocalKFs, vpLocalMPs, vpLocalTPs);
-
-		int nMatch = UpdateVisiblePoints(cur, vpLocalMPs, vpLocalTPs);
-		if (nMatch == 0)
-			return 0;
-
-		float thRadius = 1.0;
-		if (cur->mnFrameID < mnLastRelocFrameId + 2)
-			thRadius = 5.0;
-
-		int a = SearchPoints::SearchMapByProjection(cur, vpLocalMPs, vpLocalTPs, thMaxDesc, thMinDesc, thRadius);
-
-		Optimizer::PoseOptimization(cur);
-        */
+		ofile<<"Track::LocalMap::Optimize:End"<<std::endl;
+		ofile.close();
 		return UpdateFoundPoints(cur);
 	}
 
-	 
 	 int Tracker::DiscardOutliers(Frame* cur) {
 		 int nres = 0;
 		 for (int i = 0; i<cur->N; i++)
 		 {
-			 if (cur->mvpMapPoints[i])
+			 if (cur->mvpMapPoints[i] && !cur->mvpMapPoints[i]->isBad())
 			 {
 				 if (cur->mvbOutliers[i])
 				 {
@@ -125,7 +99,7 @@ namespace EdgeSLAM {
 			 if (cur->mvpMapPoints[i])
 			 {
 				 MapPoint* pMP = cur->mvpMapPoints[i];
-				 if (!pMP || cur->mvbOutliers[i]) {
+				 if (!pMP || pMP->isBad() || cur->mvbOutliers[i]) {
 					 cur->mvpMapPoints[i] = nullptr;
 					 cur->mvbOutliers[i] = false;
 				 }
@@ -140,7 +114,8 @@ namespace EdgeSLAM {
 			 //for (auto vit = vpLocalMPs.begin(), vend = vpLocalMPs.end(); vit != vend; vit++)
 		 {
 			 MapPoint* pMP = vpLocalMPs[i];
-
+             if(!pMP || pMP->isBad())
+                continue;
 			 if (cur->mspMapPoints.count(pMP))
 				 continue;
 			 nTrial++;
@@ -156,17 +131,22 @@ namespace EdgeSLAM {
 	 }
 
 	 int Tracker::UpdateFoundPoints(Frame* cur, bool bOnlyTracking) {
+
+        std::ofstream ofile;
+        ofile.open(path.c_str(), std::ios_base::out | std::ios_base::app);
+        ofile<<"UpdateFoundPoints::a"<<std::endl;
 		 int nres = 0;
 		 // Update MapPoints Statistics
 		 for (int i = 0; i<cur->N; i++)
 		 {
-			 if (cur->mvpMapPoints[i])
+		     auto pMP = cur->mvpMapPoints[i];
+			 if (pMP && !pMP->isBad())
 			 {
 				 if (!cur->mvbOutliers[i])
 				 {
 					 if (!bOnlyTracking)
 					 {
-						 if (cur->mvpMapPoints[i]->Observations()>0)
+						 if (pMP->Observations()>0)
 							 nres++;
 					 }
 					 else
@@ -174,6 +154,8 @@ namespace EdgeSLAM {
 				 }
 			 }
 		 }
+		 ofile<<"UpdateFoundPoints::b"<<std::endl;
+		 ofile.close();
 		 return nres;
 	 }
 

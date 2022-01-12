@@ -2,6 +2,7 @@
 #include "Camera.h"
 #include "ORBDetector.h"
 #include "DBoW3.h"
+
 #include "Map.h"
 #include "Frame.h"
 #include "RefFrame.h"
@@ -12,14 +13,22 @@
 #include "CameraPose.h"
 #include "MotionModel.h"
 #include "LocalMap.h"
+#include "GridCell.h"
+#include "GridFrame.h"
+
 #include "ThreadPool.h"
 #include "ConcurrentVector.h"
 #include "ConcurrentMap.h"
 #include <atomic>
 #include <thread>
 
+#include "WebAPI.h"
+//#pragma comment(lib, "ws2_32")
+
 //���� https://darkstart.tistory.com/42
 extern "C" {
+    std::string strSource;
+    std::vector<int> param = std::vector<int>(2);
 
 	EdgeSLAM::Frame* pCurrFrame = nullptr;
 	EdgeSLAM::Frame* pPrevFrame = nullptr;
@@ -40,12 +49,15 @@ extern "C" {
 	EdgeSLAM::ORBDetector* EdgeSLAM::Frame::detector;
 	EdgeSLAM::Map* EdgeSLAM::RefFrame::MAP;
 	EdgeSLAM::Map* EdgeSLAM::MapPoint::MAP;
+	std::string EdgeSLAM::SearchPoints::LogFile;
 
     std::map<int, cv::Mat> mapContentInfos;
     std::mutex mMutexContentInfo;
 
-    ConcurrentVector<cv::Point2f> cvObjects;
-    ConcurrentMap<int, cv::Mat> cvFlows;
+    //플로우를 이용해서 데이터 트랜스퍼
+    EdgeSLAM::GridFrame* pPrevGrid = nullptr;
+    EdgeSLAM::GridFrame* pCurrGrid = nullptr;
+    ConcurrentMap<int, EdgeSLAM::GridFrame*> cvGridFrames;
 
     ////object detection
     cv::Mat ObjectInfo = cv::Mat::zeros(0,6,CV_32FC1);
@@ -102,6 +114,7 @@ extern "C" {
     void Segmentation(int id){
         std::unique_lock<std::mutex> lock(mMutexSegmentation);
         cv::Mat tdata = GetDataFromUnity("Segmentation");
+        ReleaseUnityData("Segmentation");
 
         //cv::Mat temp = cv::Mat::zeros(tdata.rows, 1, CV_8UC1);
         //std::memcpy(temp.data, tdata.data(), res.size());
@@ -119,6 +132,9 @@ extern "C" {
         }
     }
 
+    void SetUserName(char* c_src, int len){
+        strSource = std::string(c_src, len);
+    }
     void SetPath(char* path) {
         strPath = std::string(path);
         std::stringstream ss;
@@ -136,8 +152,13 @@ extern "C" {
     }
 
     cv::Mat GetDataFromUnity(std::string keyword){
-            std::unique_lock < std::mutex> lock(mMutexUnityData);
-            return UnityData[keyword];
+        std::unique_lock < std::mutex> lock(mMutexUnityData);
+        return UnityData[keyword].clone();
+    }
+    void ReleaseUnityData(std::string keyword){
+        std::unique_lock < std::mutex> lock(mMutexUnityData);
+        UnityData[keyword].release();
+        UnityData.erase(keyword);
     }
 
     void LoadVocabulary(){
@@ -152,6 +173,9 @@ extern "C" {
         ofile<<"start\n";
         ofile.close();
 
+        param[0] = cv::IMWRITE_JPEG_QUALITY;
+        EdgeSLAM::SearchPoints::LogFile = strLogFile;
+
 		mnWidth  = _w;
 		mnHeight = _h;
         mnSkipFrame = nSkip;
@@ -161,11 +185,14 @@ extern "C" {
         mnLevel = nlevel;
         mfScale = fscale;
 
-        POOL = new ThreadPool::ThreadPool(24);
+        POOL = new ThreadPool::ThreadPool(8);
 
         pDetector = new EdgeSLAM::ORBDetector(nfeature,fscale,nlevel);
         pCamera = new EdgeSLAM::Camera(_w, _h, _fx, _fy, _cx, _cy, _d1, _d2, _d3, _d4);
         SemanticColorInit();
+
+        //WSAData wsaData;
+        //int code = WSAStartup(MAKEWORD(2, 2), &wsaData);
         return;
 
         pTracker = new EdgeSLAM::Tracker();
@@ -200,6 +227,10 @@ extern "C" {
 
         pMap = new EdgeSLAM::Map();
 
+        if(pPrevFrame)
+            delete pPrevFrame;
+        if(pCurrFrame)
+            delete pCurrFrame;
         pCurrFrame = nullptr;
         pPrevFrame = nullptr;
 
@@ -221,8 +252,17 @@ extern "C" {
         mapContentInfos.clear();
         LabeledImage = cv::Mat::zeros(0,0,CV_8UC4);
 
-        cvFlows.Release();
-        cvObjects.Release();
+        if(pPrevGrid)
+            delete pPrevGrid;
+        pPrevGrid = nullptr;
+        if(pCurrGrid)
+            delete pCurrGrid;
+        pCurrGrid = nullptr;
+        auto mapGrids = cvGridFrames.Get();
+        for(auto iter = mapGrids.begin(), iend = mapGrids.end(); iter != iend; iter++){
+            delete iter->second;
+        }
+        cvGridFrames.Release();
     }
 
     void* imuAddr;
@@ -233,7 +273,7 @@ extern "C" {
         bIMU = bimu;
 	}
 
-    int scale = 16;
+    int scale = 8;
     cv::Mat prevGray = cv::Mat::zeros(0,0,CV_8UC1);
     //https://learnopencv.com/optical-flow-in-opencv/
 
@@ -245,8 +285,50 @@ extern "C" {
 
         cv::Mat flow;
 		cv::calcOpticalFlowFarneback(prev, curr, flow, 0.5, 3, 15, 3, 5, 1.1, 0);
-        cvFlows.Update(id, flow);
         mnCurrFrameID = id;
+
+        if(pPrevGrid){
+            WriteLog("delete = dense = start");
+            delete pPrevGrid;
+            WriteLog("delete = dense = end");
+        }
+        pPrevGrid = pCurrGrid;
+        pCurrGrid = new EdgeSLAM::GridFrame(flow.rows, flow.cols);
+        //flow update
+        if(pPrevGrid){
+            for(int y = 0, rows = flow.rows; y < rows; y++){
+                for(int x = 0, cols = flow.cols; x < cols; x++){
+                    cv::Point2f pt1(x,y);
+                    cv::Point2f pt2(x+flow.at<cv::Vec2f>(pt1).val[0], y+flow.at<cv::Vec2f>(pt1).val[1]);
+                    if(pt2.x <= 0 || pt2.y <= 0 || pt2.x >= flow.cols-1 || pt2.y >= flow.rows-1){
+                        continue;
+                    }
+                    auto pCell = pPrevGrid->mGrid[y][x];
+                    if(!pCell){
+                        continue;
+                    }
+                    pCurrGrid->mGrid[pt2.y][pt2.x] = pCell;
+                }
+            }
+        }
+        //WriteLog("b");
+        for(int y = 0, rows = flow.rows; y < rows; y++){
+            for(int x = 0, cols = flow.cols; x < cols; x++){
+                auto pCell = pCurrGrid->mGrid[y][x];
+                if(!pCell){
+                    pCell = new EdgeSLAM::GridCell();
+                    pCurrGrid->mGrid[y][x] = pCell;
+                }
+                pCell->AddObservation(pCurrGrid, y*rows+x);
+            }
+        }
+        //flow update
+        //WriteLog("c");
+        if(id % mnSkipFrame == 0){
+            auto newPGrid = new EdgeSLAM::GridFrame(flow.rows, flow.cols);
+            newPGrid->Copy(pCurrGrid);
+            cvGridFrames.Update(id,newPGrid);
+        }
 
         std::chrono::high_resolution_clock::time_point s2 = std::chrono::high_resolution_clock::now();
 		auto d = std::chrono::duration_cast<std::chrono::milliseconds>(s2 - s1).count();
@@ -276,25 +358,25 @@ extern "C" {
         */
 
         ss.str("");
-		ss<<"DenseFlow::End::!!!!!! "<<t;
+		ss<<"DenseFlow::End::!!!!!! "<<id<<"="<<t;
         WriteLog(ss.str());
     }
 
     int SetFrame(void* data, int id, double ts) {
         //ofile.open(strLogFile.c_str(), std::ios_base::out | std::ios_base::app);
         //ofile<<"Frame start"<<std::endl;
-        WriteLog("SetFrame::Start");
+        //WriteLog("SetFrame::Start");
         cv::Mat gray;
         bool res = true;
         cv::Mat frame = cv::Mat(mnHeight, mnWidth, CV_8UC4, data);
-        //cv::cvtColor(frame, frame, cv::COLO  R_BGRA2RGBA);
+        //cv::cvtColor(frame, frame, cv::COLOR_BGRA2RGBA);
         cv::flip(frame, frame,0);
         cv::cvtColor(frame, gray, cv::COLOR_BGRA2GRAY);//COLOR_BGRA2GRAY, COLOR_RGBA2GRAY
 
         cv::Mat gray_resized;
         cv::resize(gray, gray_resized, gray.size() / scale);
         if(prevGray.rows > 0){
-            POOL->EnqueueJob(DenseFlow, id, prevGray.clone(), gray_resized.clone());
+            //POOL->EnqueueJob(DenseFlow, id, prevGray.clone(), gray_resized.clone());
             prevGray.release();
         }
         prevGray = gray_resized.clone();
@@ -318,18 +400,69 @@ extern "C" {
 
         //ofile<<"SetFrame="<<t_total<<std::endl;
         //ofile.close();
-        WriteLog("SetFrame::End");
+        //WriteLog("SetFrame::End");
 
         return pCurrFrame->N;
     }
-    void SetLocalMap(){
-
+    void Parsing(int id, std::string key, cv::Mat data, bool bTracking){
+        if(key == "ReferenceFrame"){
+            if(bTracking)
+                CreateReferenceFrame(id, data);
+        }
     }
 
-    void CreateReferenceFrame(int id){
-        WriteLog("SetReference::Start!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-        cv::Mat f1 = GetDataFromUnity("ReferenceFrame");
-        auto pRefFrame = new EdgeSLAM::RefFrame(pCamera, (float*)f1.data);
+    void StoreData(std::string key, int id, std::string src, double ts, const void* data, int lendata){
+        std::stringstream ss;
+		ss <<"/Store?keyword="<<key<<"&id="<<id<<"&src="<<src<<"&ts="<<std::fixed<<std::setprecision(6)<<ts;
+		//std::chrono::high_resolution_clock::time_point s1 = std::chrono::high_resolution_clock::now();
+		WebAPI api("143.248.6.143", 35005);
+        auto res = api.Send(ss.str(), (const unsigned char*)data, lendata);
+
+        //std::chrono::high_resolution_clock::time_point s2 = std::chrono::high_resolution_clock::now();
+        //auto d = std::chrono::duration_cast<std::chrono::milliseconds>(s2 - s1).count();
+        //float t = d / 1000.0;
+        //ss.str("");
+        //ss<<"upload test ="<<t<<" "<<lendata;
+        //WriteLog(ss.str());
+    }
+    void LoadData(std::string key, int id, std::string src, bool bTracking){
+        std::stringstream ss;
+		ss <<"/Load?keyword="<<key<<"&id="<<id<<"&src="<<src;//"<< "/Load?keyword=Keypoints" << "&id=" << id << "&src=" << user->userName;
+		std::chrono::high_resolution_clock::time_point s1 = std::chrono::high_resolution_clock::now();
+		WebAPI api("143.248.6.143", 35005);
+        auto res = api.Send(ss.str(),"");
+        int n2 = res.size();
+        std::chrono::high_resolution_clock::time_point s2 = std::chrono::high_resolution_clock::now();
+        auto d = std::chrono::duration_cast<std::chrono::milliseconds>(s2 - s1).count();
+        float t = d / 1000.0;
+        ss.str("");
+        ss<<"download test ="<<t<<" "<<n2;
+
+        //set data
+        cv::Mat temp = cv::Mat::zeros(n2, 1, CV_8UC1);
+        std::memcpy(temp.data, res.data(), n2);
+        Parsing(id, key, temp, bTracking);
+        temp.release();
+        //WriteLog(ss.str());
+    }
+
+    void TestUploaddata(char* data, int datalen, int id, char* ckey, int clen1, char* csrc, int clen2, double ts){
+        std::string key(ckey, clen1);
+        std::string src(csrc, clen2);
+        POOL->EnqueueJob(StoreData, key, id, src, ts, data, datalen);
+    }
+    void TestDownloaddata(int id, char* ckey, int clen1, char* csrc, int clen2, bool bTracking){
+        std::string key(ckey, clen1);
+        std::string src(csrc, clen2);
+        POOL->EnqueueJob(LoadData, key, id, src, bTracking);
+    }
+
+    void CreateReferenceFrame(int id, cv::Mat data){
+        //WriteLog("SetReference::Start!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+        //cv::Mat f1 = GetDataFromUnity("ReferenceFrame");
+        //ReleaseUnityData("ReferenceFrame");
+
+        auto pRefFrame = new EdgeSLAM::RefFrame(pCamera, (float*)data.data);
         cv::Mat img = pMap->GetImage(id);
         pDetector->Compute(img, cv::Mat(), pRefFrame->mvKeys, pRefFrame->mDescriptors);
         //std::vector<cv::Mat> vCurrentDesc = Utils::toDescriptorVector(pRefFrame->mDescriptors);
@@ -345,6 +478,7 @@ extern "C" {
         int nkf = 0;
         EdgeSLAM::RefFrame* ref = nullptr;
         EdgeSLAM::RefFrame* last = nullptr;
+
         for(ref = pRefFrame; ref; ref = ref->mpParent, nkf++){
             if(!ref || nkf >= mnKeyFrame){
                 break;
@@ -352,13 +486,11 @@ extern "C" {
             auto vpMPs = ref->mvpMapPoints;
             for(int i =0; i < ref->N; i++){
                 auto pMP = vpMPs[i];
-                if(!pMP || spMPs.count(pMP)){
+                if(!pMP || pMP->isBad() || spMPs.count(pMP)){
                     continue;
                 }
-                auto pTP = new EdgeSLAM::TrackPoint();
-                 if(pRefFrame->is_in_frustum(pMP, pTP,0.5)){
+                if(pRefFrame->is_in_frustum(pMP, 0.5)){
                     pLocal->mvpMapPoints.push_back(pMP);
-                    pLocal->mvpTrackPoints.push_back(pTP);
                     spMPs.insert(pMP);
                 }
             }
@@ -382,12 +514,13 @@ extern "C" {
 
         pMap->SetReferenceFrame(pRefFrame);
         pMap->SetLocalMap(pLocal);
-        f1.release();
-        WriteLog("SetReference::End!!!!!!!!!!!!!!!!!!!");
+        //f1.release();
+        //WriteLog("SetReference::End!!!!!!!!!!!!!!!!!!!");
     }
 
     void SetReferenceFrame(int id) {
-        POOL->EnqueueJob(CreateReferenceFrame, id);
+        //POOL->EnqueueJob(CreateReferenceFrame, id);
+        //CreateReferenceFrame(id);
 	}
 
 	void AddObjectInfo(int id){
@@ -399,83 +532,48 @@ extern "C" {
 
         //std::unique_lock<std::mutex> lock(mMutexObjectInfo);
         cv::Mat tdata = GetDataFromUnity("ObjectDetection");
+        ReleaseUnityData("ObjectDetection");
         int n = tdata.rows/24;
         cv::Mat obj = cv::Mat(n, 6, CV_32FC1, tdata.data);
 
-        std::map<int, cv::Mat> flows = cvFlows.Get();
-        cvFlows.Erase(id);
-        int nMaxID = mnCurrFrameID.load();
+        if(cvGridFrames.Count(id)){
+            auto pGridFrame = cvGridFrames.Get(id);
+            int SX = pGridFrame->mGrid[0].size()-1;
+            int SY = pGridFrame->mGrid.size()-1;
 
-        int SX = mnWidth/scale;
-        int SY = mnHeight/scale;
+            ss.str("");
+            ss<<"ObjectProcessing::"<<SX<<" "<<SY;
+            WriteLog(ss.str());
 
-        std::vector<cv::Point2f> vecPTs;
-
-        for(int j = 0, jend = obj.rows; j < jend ;j++){
-            cv::Point2f left(obj.at<float>(j, 2), obj.at<float>(j, 3));
-            cv::Point2f right(obj.at<float>(j, 4), obj.at<float>(j, 5));
-
-            for(int x = left.x, xend = right.x; x < xend; x+=scale){
-                for(int y = left.y, yend = right.y; y < yend; y+=scale){
-                    int sx = x/scale;
-                    int sy = y/scale;
-                    if (sx <= 0 || sy <= 0 || sx >= SX || sy >= SY )
-                        continue;
-                    vecPTs.push_back(cv::Point2f(sx,sy));
+            for(int j = 0, jend = obj.rows; j < jend ;j++){
+                cv::Point2f left(obj.at<float>(j, 2), obj.at<float>(j, 3));
+                cv::Point2f right(obj.at<float>(j, 4), obj.at<float>(j, 5));
+                int label = (int)obj.at<float>(j, 0)+1;
+                for(int x = left.x, xend = right.x; x < xend; x+=scale){
+                    for(int y = left.y, yend = right.y; y < yend; y+=scale){
+                        int sx = x/scale;
+                        int sy = y/scale;
+                        if (sx < 0 || sy < 0 || sx > SX || sy > SY )
+                            continue;
+                        auto pCell = pGridFrame->mGrid[sy][sx];
+                        if(pCell)
+                            pCell->mpObject->Update(label);
+                    }
                 }
             }
-        }
-
-        for(int i = id; i <= nMaxID; i++){
-            if(!flows.count(i))
-                continue;
-            auto flow = flows[i];
-
-            for(int j = 0; j < vecPTs.size(); j++){
-                auto pt = vecPTs[j];
-                if(pt.x < 0.0)
-                    continue;
-                if(pt.x >= SX || pt.y >= SY || pt.x <=0 || pt.y <= 0)
-                {
-                    vecPTs[j].x = -1.0;
-                    //ss.str("");
-                    //ss<<"A = "<<pt.x<<" "<<pt.y;
-                    //WriteLog(ss.str());
-                    continue;
-                }
-                vecPTs[j].x = flow.at<cv::Vec2f>(pt).val[0]+pt.x;
-                vecPTs[j].y = flow.at<cv::Vec2f>(pt).val[1]+pt.y;
-
-                /*
-                if (sx <= 0 || sy <= 0 || sx >= SX || sy >= SY )
-                {
-                    sx = -1.0;
-                    //continue;
-                }
-                vecPTs[j].x = sx;
-                vecPTs[j].y = sy;
-                */
+            cvGridFrames.Erase(id);
+            if(pGridFrame){
+                WriteLog("Object = Delete = Start");
+                delete pGridFrame;
+                WriteLog("Object = Delete = End");
             }
-        }
-
-        cvObjects.Clear();
-        int n1 = 0;
-        int n2 = 0;
-        for(int j = 0; j < vecPTs.size(); j++){
-            n1++;
-            auto pt = vecPTs[j];
-            if(pt.x < 0.0){
-                n2++;
-                continue;
-            }
-            cvObjects.push_back(pt);
         }
 
         std::chrono::high_resolution_clock::time_point s2 = std::chrono::high_resolution_clock::now();
         auto d = std::chrono::duration_cast<std::chrono::milliseconds>(s2 - s1).count();
         float t = d / 1000.0;
         ss.str("");
-        ss<<"ObjectProcessing::End::!!!!!!  "<<cvObjects.size()<<", "<<n1<<" "<<n2<<", "<<t;
+        ss<<"ObjectProcessing::End::!!!!!!  "<<id<<"="<<t;
         WriteLog(ss.str());
 
 	}
@@ -500,7 +598,10 @@ extern "C" {
         //ofile<<"tracking start"<<std::endl;
 		bool bTrack = false;
 		int nMatch = -1;
-        WriteLog("Track::Start");
+		ofile.open(strLogFile.c_str(), std::ios::trunc);
+        ofile<<"Track::start\n";
+        ofile.close();
+        // WriteLog("Track::Start");
 		if (pTracker->mTrackState == EdgeSLAM::TrackingState::NotEstimated || pTracker->mTrackState == EdgeSLAM::TrackingState::Failed) {
 			EdgeSLAM::RefFrame* rf = pMap->GetReferenceFrame();
 
@@ -529,9 +630,22 @@ extern "C" {
 
 			}else
 			    pCurrFrame->SetPose(pMotionModel->predict());
+            WriteLog("predict");
+            {
+                std::stringstream ss;
+                ss<<pMotionModel->predict();
+                WriteLog(ss.str());
+            }
+            {
+                cv::Mat T = pCurrFrame->GetPose();
+                std::stringstream ss;
+                ss<<T<<std::endl;
+                WriteLog(ss.str());
+            }
 			//prev
 
 			nMatch = pTracker->TrackWithPrevFrame(pPrevFrame, pCurrFrame, 100.0, 50.0);
+
 			bTrack = nMatch >= 10;
 			if (!bTrack) {
 				EdgeSLAM::RefFrame* rf = pMap->GetReferenceFrame();
@@ -543,17 +657,20 @@ extern "C" {
 				}
 			}
 		}
+		WriteLog("Track::1");
 		if (bTrack) {
 			//local map
 			//ofile<<"local map matching = start"<<std::endl;
 			EdgeSLAM::LocalMap* pLocal = new EdgeSLAM::LocalMap();
 			//ofile<<"local map matching = 1"<<std::endl;
 			pMap->GetLocalMap(pLocal);
+			WriteLog("Track::1.1");
 			//ofile<<"local map matching = 2 = "<<pLocal->mvpMapPoints.size()<<" "<<pLocal->mvpTrackPoints.size()<<std::endl;
 			nMatch = 4;
 			nMatch = pTracker->TrackWithLocalMap(pCurrFrame, pLocal, 100.0, 50.0);
             //ofile<<"local map matching = "<<nMatch<<"\n";
 
+            WriteLog("Track::1.2");
 			if (pCurrFrame->mnFrameID < pTracker->mnLastRelocFrameId + 30 && nMatch < 30) {
 				bTrack = false;
 				//bTrack = true;
@@ -566,10 +683,11 @@ extern "C" {
 			}
 			delete pLocal;
 		}
-
 		if (bTrack) {
 			pTracker->mTrackState = EdgeSLAM::TrackingState::Success;
 			pMotionModel->update(pCurrFrame->GetPose());
+
+            ////unity에 포즈 정보 갱신함.
 			cv::Mat T = pCurrFrame->GetPose();
 		    cv::Mat P = cv::Mat(4,3, CV_32FC1, data);
 		    T.rowRange(0, 3).colRange(0, 3).copyTo(P.rowRange(0, 3));
@@ -583,7 +701,6 @@ extern "C" {
 		
         //ofile<<"Tracking="<<t_total<<std::endl;
         //ofile.close();
-        WriteLog("Track::End");
 		return bTrack;
 	}
     std::mutex mMutexLogFile;
@@ -628,18 +745,21 @@ extern "C" {
             cv::rectangle(img,left, right, cv::Scalar(255, 255, 255, 255));
         }
         */
-        auto vecPTs = cvObjects.get();
-        std::stringstream ss;
-        ss<<"VIS = "<<vecPTs.size();
-        WriteLog(ss.str());
 
-        for(int j = 0; j < vecPTs.size(); j++){
-            auto pt = vecPTs[j];
-            if(pt.x < 0.0)
-                continue;
-            float x = pt.x*scale;
-            float y = pt.y*scale;
-            cv::circle(img, cv::Point2f(x,y), 3, cv::Scalar(255, 0, 255, 255), -1);
+        if(pCurrGrid){
+            WriteLog("vis::start");
+             for(int y = 0, rows = pCurrGrid->mGrid.size(); y < rows; y++){
+                for(int x = 0, cols = pCurrGrid->mGrid[0].size(); x < cols; x++){
+                    auto pCell = pCurrGrid->mGrid[y][x];
+                    if(pCell){
+                        if(pCell->mpObject->GetLabel()>0){
+                            cv::Point2f pt(x*scale,y*scale);
+                            cv::circle(img, pt, 4, SemanticColors[pCell->mpObject->GetLabel()], -1);
+                        }
+                    }
+                }
+            }
+            WriteLog("vis::end");
         }
 
         cv::Mat labeled;
@@ -710,5 +830,170 @@ extern "C" {
         //ofile<<"visualize end"<<std::endl;
         //ofile.close();
 		return true;
+    }
+    void SendDevicePose(int id, double ts, cv::Mat T){
+        //cv::Mat T = pCurrFrame->GetPose();
+        cv::Mat P = cv::Mat::zeros(4,3, CV_32FC1);
+        T.rowRange(0, 3).colRange(0, 3).copyTo(P.rowRange(0, 3));
+        cv::Mat t = T.col(3).rowRange(0, 3).t();
+        t.copyTo(P.row(3));
+        StoreData("DevicePosition", id, strSource, ts, P.data, 48);
+    }
+    void SendImage(int id, double ts, int nQuality, cv::Mat frame){
+        param[1] = nQuality;
+        std::vector<uchar> buffer;
+        cv::imencode(".jpg", frame, buffer, param);
+        //cv::Mat(buffer).clone().data
+        StoreData("Image", id, strSource, ts, buffer.data(), buffer.size());
+    }
+
+    bool Localization(void* data, int id, double ts, int nQuality, bool bTracking, bool bVisualization){
+
+        std::chrono::high_resolution_clock::time_point t1 = std::chrono::high_resolution_clock::now();
+        ofile.open(strLogFile.c_str(), std::ios::trunc);
+        ofile<<"Localization::start\n";
+        ofile.close();
+
+        cv::Mat gray;
+        bool res = true;
+
+        //유니티에서 온 프레임
+        cv::Mat ori_frame = cv::Mat(mnHeight, mnWidth, CV_8UC4, data);
+        cv::Mat frame = ori_frame.clone();
+
+        ////convert color(a,r,g,b)->bgr
+        cv::cvtColor(frame, frame, cv::COLOR_BGRA2RGB);
+        /*
+        std::vector<cv::Mat> colors(4);
+        cv::split(frame, colors);
+        std::vector<cv::Mat> colors2(3);
+        colors2[0] = colors[2];//a->3
+        colors2[1] = colors[1];//r->2
+        colors2[2] = colors[0];//g->1
+        //colors2[3] = colors[0];//b->0
+        cv::merge(colors2, frame);
+        */
+        frame.convertTo(frame, CV_8UC3);
+
+        ////convert color(a,r,g,b)->bgr
+        //NDK에서 이용하는 이미지로 변환
+
+        cv::flip(frame, frame,0);
+        cv::cvtColor(frame, gray, cv::COLOR_BGR2GRAY);//COLOR_BGRA2GRAY, COLOR_RGBA2GRAY
+
+
+        if(id % mnSkipFrame == 0)
+        {
+            POOL->EnqueueJob(SendImage, id, ts, nQuality, frame);
+        }
+
+        ////데이터 트랜스퍼 용
+        /*
+        cv::Mat gray_resized;
+        cv::resize(gray, gray_resized, gray.size() / scale);
+        if(prevGray.rows > 0){
+            //POOL->EnqueueJob(DenseFlow, id, prevGray.clone(), gray_resized.clone());
+            prevGray.release();
+        }
+        prevGray = gray_resized.clone();
+        */
+        ////데이터 트랜스퍼 용
+        if(!bTracking){
+            return false;
+        }
+
+        if(id % mnSkipFrame == 0)
+        {
+            //그레이 이미지 기록
+            pMap->AddImage(gray.clone(), id);
+        }
+
+        ////이전 프레임 해제
+        if(pPrevFrame)
+            delete pPrevFrame;
+        pPrevFrame = pCurrFrame;
+        pCurrFrame = new EdgeSLAM::Frame(gray, pCamera, id);
+        pCurrFrame->logfile = strLogFile;
+
+        //트래킹
+        bool bTrack = false;
+		int nMatch = -1;
+
+		if (pTracker->mTrackState == EdgeSLAM::TrackingState::NotEstimated || pTracker->mTrackState == EdgeSLAM::TrackingState::Failed) {
+			EdgeSLAM::RefFrame* rf = pMap->GetReferenceFrame();
+			if (rf) {
+				nMatch = pTracker->TrackWithReferenceFrame(rf, pCurrFrame, 100.0, 50.0);
+				bTrack = nMatch >= 10;
+				if (bTrack) {
+					pTracker->mnLastRelocFrameId = pCurrFrame->mnFrameID;
+				}
+			}
+		}
+
+		if (pTracker->mTrackState == EdgeSLAM::TrackingState::Success) {
+			//predict
+			if(bIMU){
+                cv::Mat Rgyro = cv::Mat(3,3, CV_32FC1,imuAddr);
+                cv::Mat tacc = cv::Mat::zeros(3,1,CV_32FC1);
+                cv::Mat Timu = cv::Mat::eye(4,4,CV_32FC1);
+                Rgyro.copyTo(Timu.rowRange(0,3).colRange(0,3));
+                tacc.copyTo(Timu.rowRange(0,3).col(3));
+                cv::Mat Tprev = pPrevFrame->GetPose();
+                pCurrFrame->SetPose(Timu*Tprev);
+
+			}else
+			    pCurrFrame->SetPose(pMotionModel->predict());
+
+			nMatch = pTracker->TrackWithPrevFrame(pPrevFrame, pCurrFrame, 100.0, 50.0);
+            WriteLog("Tracker::Prev::123123");
+			bTrack = nMatch >= 10;
+			if (!bTrack) {
+				EdgeSLAM::RefFrame* rf = pMap->GetReferenceFrame();
+				if (rf) {
+					nMatch = pTracker->TrackWithReferenceFrame(rf, pCurrFrame, 100.0, 50.0);
+					bTrack = nMatch >= 10;
+				}
+			}
+			WriteLog("Tracker::Prev::End");
+		}
+
+		if (bTrack) {
+			EdgeSLAM::LocalMap* pLocal = new EdgeSLAM::LocalMap();
+			pMap->GetLocalMap(pLocal);
+			nMatch = 4;
+			nMatch = pTracker->TrackWithLocalMap(pCurrFrame, pLocal, 100.0, 50.0);
+
+			if (pCurrFrame->mnFrameID < pTracker->mnLastRelocFrameId + 30 && nMatch < 30) {
+				bTrack = false;
+			}
+			else if (nMatch < 30) {
+				bTrack = false;
+			}
+			else {
+				bTrack = true;
+			}
+			delete pLocal;
+		}
+		if (bTrack) {
+			pTracker->mTrackState = EdgeSLAM::TrackingState::Success;
+			cv::Mat T = pCurrFrame->GetPose();
+			pMotionModel->update(T);
+			POOL->EnqueueJob(SendDevicePose, id, ts, T.clone());
+		}
+		else {
+			pTracker->mTrackState = EdgeSLAM::TrackingState::Failed;
+			pMotionModel->reset();
+		}
+
+        //시각화
+        std::chrono::high_resolution_clock::time_point t2 = std::chrono::high_resolution_clock::now();
+		auto d = std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1).count();
+		float t = d / 1000.0;
+		{
+		    std::stringstream ss;
+		    ss<<"Localizatio="<<id<<"="<<nMatch<<", "<<t<<std::endl;
+		    WriteLog(ss.str());
+		}
+        return bTrack;
     }
 }

@@ -19,9 +19,10 @@ namespace EdgeSLAM {
 		static int SearchFrameByProjection(RefFrame* ref, Frame* curr, float thMaxDesc = 100.0, float thMinDesc = 50.0, float thProjection = 15, bool bCheckOri = true);
 		static int SearchFrameByProjection(Frame* prev, Frame* curr, float thMaxDesc = 100.0, float thMinDesc = 50.0, float thProjection = 15, bool bCheckOri = true);
 		static int SearchMapByProjection(Frame *F, const std::vector<MapPoint*> &vpMapPoints, float thMaxDesc = 100.0, float thMinDesc = 50.0, float thRadius = 1.0, float thMatchRatio = 0.8, bool bCheckOri = true);
-		static int SearchFrameByBoW(RefFrame* pKF, Frame *F, std::vector<MapPoint*> &vpMapPointMatches, float thMinDesc = 50.0, float thMatchRatio = 0.7, bool bCheckOri = true);
 		static void ComputeThreeMaxima(std::vector<int>* histo, const int L, int &ind1, int &ind2, int &ind3);
 		static float RadiusByViewingCos(const float &viewCos);
+    public:
+	    static std::string LogFile;
 	};
 }
 #endif

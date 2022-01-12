@@ -153,7 +153,7 @@ namespace EdgeSLAM {
 					mpRefKF = mObservations.begin()->first;
 
 				// If only 2 observations or less, discard point
-				if (nObs <= 2)
+				if (nObs <= 0)
 					bBad = true;
 			}
 		}
@@ -176,7 +176,6 @@ namespace EdgeSLAM {
             RefFrame* pKF = mit->first;
             pKF->EraseMapPointMatch(mit->second);
         }
-
         MAP->RemoveMapPoint(this->mnID);
     }
     bool MapPoint::isBad()

@@ -1,4 +1,5 @@
 #include "Map.h"
+#include "MapPoint.h"
 #include "LocalMap.h"
 #include "RefFrame.h"
 
@@ -39,7 +40,13 @@ namespace EdgeSLAM {
     }
     void Map::GetLocalMap(LocalMap* pLocal){
         std::unique_lock<std::mutex> lock(mMutexLocalMap);
-        pLocal->mvpMapPoints   = std::vector<MapPoint*>  (mpLocalMap->mvpMapPoints.begin(),   mpLocalMap->mvpMapPoints.end());
+        pLocal->mvpMapPoints.reserve(mpLocalMap->mvpMapPoints.size());
+        for(int i = 0; i < mpLocalMap->mvpMapPoints.size(); i++){
+            auto pMPi = mpLocalMap->mvpMapPoints[i];
+            if(pMPi && !pMPi->isBad())
+                pLocal->mvpMapPoints.push_back(pMPi);
+        }
+        pLocal->mvpMapPoints  = std::vector<MapPoint*>  (mpLocalMap->mvpMapPoints.begin(),   mpLocalMap->mvpMapPoints.end());
     }
     bool Map::CheckMapPoint(int id){
         std::unique_lock<std::mutex> lock(mMutexMapPoints);
