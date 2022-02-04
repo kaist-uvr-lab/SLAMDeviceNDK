@@ -2,13 +2,15 @@
 
 namespace EdgeSLAM {
 	GridCell::GridCell(){
-	    mpObject = new Label();
-	    mpSegLabel = new Label();
+	    //mpObject = new Label();
+	    //mpSegLabel = new Label();
 	}
     GridCell::~GridCell(){
-        delete mpObject;
-        delete mpSegLabel;
-        mapObservation.Release();
+        //delete mpObject;
+        //delete mpSegLabel;
+        //mapObservation.Release();
+        std::map<int,int>().swap(mapObjectID);
+        std::map<int,int>().swap(mapSegLabel);
     }
 
 	Label::Label() :mnLabel(0), mnCount(0) {
@@ -52,7 +54,7 @@ namespace EdgeSLAM {
 		std::unique_lock<std::mutex> lock(mMutexObject);
 		return matLabels.at<ushort>(l);
 	}
-
+/*
 	void GridCell::AddObservation(GridFrame* pGF, int idx){
 		mapObservation.Update(pGF, idx);
 	}
@@ -69,5 +71,5 @@ namespace EdgeSLAM {
 	bool GridCell::isBad(){
 		return mbBad.load();
 	}
-
+*/
 }

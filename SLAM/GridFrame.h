@@ -9,6 +9,7 @@
 #include <opencv2/opencv.hpp>
 #include <opencv2/core.hpp>
 #include <atomic>
+#include "ConcurrentVector.h"
 
 namespace EdgeSLAM {
     class GridCell;
@@ -18,9 +19,11 @@ namespace EdgeSLAM {
             GridFrame(int r, int c);
             virtual ~GridFrame();
         public:
-            void Init(int row, int col);
-            void Copy(GridFrame* p);
-            std::vector<std::vector<GridCell*>> mGrid;
+            //void Init(int row, int col);
+            //void Copy(GridFrame* p);
+            //std::vector<std::vector<GridCell*>> mGrid;
+            cv::Mat mFlow, mOccupied;
+            ConcurrentVector<GridCell> vecCells;
     };
 }
 

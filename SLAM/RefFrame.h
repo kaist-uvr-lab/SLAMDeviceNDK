@@ -60,8 +60,7 @@ namespace EdgeSLAM {
 		float mnMaxX;
 		float mnMinY;
 		float mnMaxY;
-	public:
-		RefFrame* mpParent;
+
 	public:
 		Camera* mpCamera;
 		static ORBDetector* detector;

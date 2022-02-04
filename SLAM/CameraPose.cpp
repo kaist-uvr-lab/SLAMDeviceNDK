@@ -7,7 +7,12 @@ namespace EdgeSLAM {
 	CameraPose::CameraPose(cv::Mat T) {
 		SetPose(T);
 	}
-	CameraPose::~CameraPose() {}
+	CameraPose::~CameraPose() {
+	    Tcw.release();
+	    Rcw.release();
+	    tcw.release();
+	    Ow.release();
+	}
 
 	void CameraPose::SetPose(cv::Mat T) {
 		std::unique_lock<std::mutex> lock(mMutexPose);

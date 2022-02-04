@@ -63,12 +63,12 @@ namespace EdgeSLAM {
 		if (cur->mnFrameID < mnLastRelocFrameId + 2)
 			thRadius = 5.0;
 		int a = SearchPoints::SearchMapByProjection(cur, pLocal->mvpMapPoints, thMaxDesc, thMinDesc, thRadius);
-		std::ofstream ofile;
-        ofile.open(path.c_str(), std::ios_base::out | std::ios_base::app);
-        ofile<<"Track::LocalMap::Optimize:Start"<<std::endl;
+		//std::ofstream ofile;
+        //ofile.open(path.c_str(), std::ios_base::out | std::ios_base::app);
+        //ofile<<"Track::LocalMap::Optimize:Start"<<std::endl;
 		Optimizer::PoseOptimization(cur);
-		ofile<<"Track::LocalMap::Optimize:End"<<std::endl;
-		ofile.close();
+		//ofile<<"Track::LocalMap::Optimize:End"<<std::endl;
+		//ofile.close();
 		return UpdateFoundPoints(cur);
 	}
 
@@ -132,9 +132,9 @@ namespace EdgeSLAM {
 
 	 int Tracker::UpdateFoundPoints(Frame* cur, bool bOnlyTracking) {
 
-        std::ofstream ofile;
-        ofile.open(path.c_str(), std::ios_base::out | std::ios_base::app);
-        ofile<<"UpdateFoundPoints::a"<<std::endl;
+        //std::ofstream ofile;
+        //ofile.open(path.c_str(), std::ios_base::out | std::ios_base::app);
+        //ofile<<"UpdateFoundPoints::a"<<std::endl;
 		 int nres = 0;
 		 // Update MapPoints Statistics
 		 for (int i = 0; i<cur->N; i++)
@@ -154,8 +154,8 @@ namespace EdgeSLAM {
 				 }
 			 }
 		 }
-		 ofile<<"UpdateFoundPoints::b"<<std::endl;
-		 ofile.close();
+		 //ofile<<"UpdateFoundPoints::b"<<std::endl;
+		 //ofile.close();
 		 return nres;
 	 }
 

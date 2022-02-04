@@ -6,10 +6,10 @@
 
 extern "C" {
     void SetPath(char* path);
-    void LoadVocabulary();
     void SetInit(int _w, int _h, float _fx, float _fy, float _cx, float _cy, float _d1, float _d2, float _d3, float _d4, int nfeature, int nlevel, float fscale, int nSkip, int nKFs);//char* vocName,
     void SetUserName(char* c_src, int len);
     void ConnectDevice();
+    void DisconnectDevice();
 
     void SetDataFromUnity(void* data, char* path, int len, int strlen);
     cv::Mat GetDataFromUnity(std::string keyword);
@@ -24,13 +24,14 @@ extern "C" {
     void SetReferenceFrame(int id);
     void SetIMUAddress(void* addr, bool bIMU);
 
+    void AddObjectInfo(int id, cv::Mat data);
     void AddObjectInfos(int id);
     void AddContentInfo(int id, float x, float y, float z);
 
     void SemanticColorInit();
     void Segmentation(int id);
 
-    void WriteLog(std::string str);
+    void WriteLog(std::string str, std::ios_base::openmode mode = std::ios_base::out | std::ios_base::app);
 
     bool VisualizeFrame(void* data);
     //bool GetMatchingImage(void* data);

@@ -1,7 +1,6 @@
 #include "UnityLibrary.h"
 #include "Camera.h"
 #include "ORBDetector.h"
-#include "DBoW3.h"
 
 #include "Map.h"
 #include "Frame.h"
@@ -19,6 +18,7 @@
 #include "ThreadPool.h"
 #include "ConcurrentVector.h"
 #include "ConcurrentMap.h"
+#include "ConcurrentDeque.h"
 #include <atomic>
 #include <thread>
 
@@ -27,8 +27,18 @@
 
 //���� https://darkstart.tistory.com/42
 extern "C" {
+
+    std::map<int, int> testUploadCount;
+    std::map<int, float> testUploadTime;
+
+    std::map<std::string, int> testDownloadCount;
+    std::map<std::string, float> testDownloadTime;
+
     std::string strSource;
     std::vector<int> param = std::vector<int>(2);
+
+    ConcurrentMap<int, cv::Mat> mapSendedImages;
+    ConcurrentDeque<EdgeSLAM::RefFrame*> dequeRefFrames;
 
 	EdgeSLAM::Frame* pCurrFrame = nullptr;
 	EdgeSLAM::Frame* pPrevFrame = nullptr;
@@ -37,7 +47,6 @@ extern "C" {
 	EdgeSLAM::MotionModel* pMotionModel;
 	EdgeSLAM::CameraPose* pCameraPose;
 	EdgeSLAM::Tracker* pTracker;
-	DBoW3::Vocabulary* pVoc;
 	EdgeSLAM::Map* pMap;
     ThreadPool::ThreadPool* POOL = nullptr;
 
@@ -49,14 +58,11 @@ extern "C" {
 	EdgeSLAM::ORBDetector* EdgeSLAM::Frame::detector;
 	EdgeSLAM::Map* EdgeSLAM::RefFrame::MAP;
 	EdgeSLAM::Map* EdgeSLAM::MapPoint::MAP;
-	std::string EdgeSLAM::SearchPoints::LogFile;
 
     std::map<int, cv::Mat> mapContentInfos;
     std::mutex mMutexContentInfo;
 
     //플로우를 이용해서 데이터 트랜스퍼
-    EdgeSLAM::GridFrame* pPrevGrid = nullptr;
-    EdgeSLAM::GridFrame* pCurrGrid = nullptr;
     ConcurrentMap<int, EdgeSLAM::GridFrame*> cvGridFrames;
 
     ////object detection
@@ -76,7 +82,7 @@ extern "C" {
 	int mnFeature, mnLevel;
 	float mfScale;
     int mnKeyFrame;
-    std::atomic<int> mnCurrFrameID, mnLastUpdatedID;
+    std::atomic<int> mnSendedID, mnLastUpdatedID;
 
     std::ifstream inFile;
     char x[1000];
@@ -161,12 +167,6 @@ extern "C" {
         UnityData.erase(keyword);
     }
 
-    void LoadVocabulary(){
-        std::string strVoc = strPath+"/orbvoc.dbow3";//std::string(vocName);
-        pVoc = new DBoW3::Vocabulary();
-        pVoc->load(strVoc);
-    }
-
     void SetInit(int _w, int _h, float _fx, float _fy, float _cx, float _cy, float _d1, float _d2, float _d3, float _d4, int nfeature, int nlevel, float fscale, int nSkip, int nKFs) {//char* vocName,
 
         ofile.open(strLogFile.c_str(), std::ios::trunc);
@@ -174,7 +174,6 @@ extern "C" {
         ofile.close();
 
         param[0] = cv::IMWRITE_JPEG_QUALITY;
-        EdgeSLAM::SearchPoints::LogFile = strLogFile;
 
 		mnWidth  = _w;
 		mnHeight = _h;
@@ -191,52 +190,87 @@ extern "C" {
         pCamera = new EdgeSLAM::Camera(_w, _h, _fx, _fy, _cx, _cy, _d1, _d2, _d3, _d4);
         SemanticColorInit();
 
-        //WSAData wsaData;
-        //int code = WSAStartup(MAKEWORD(2, 2), &wsaData);
-        return;
-
-        pTracker = new EdgeSLAM::Tracker();
-        pMap = new EdgeSLAM::Map();
-        pCurrFrame = nullptr;
-        pPrevFrame = nullptr;
-        //pRefFrame = nullptr;
-        //mapMapPoints.clear();
-        //EdgeSLAM::RefFrame::MapPoints.clear();
-        //mapFrames.clear();
-        //mapRefFrames.clear();
-        EdgeSLAM::RefFrame::nId = 0;
-
-        pCameraPose = new EdgeSLAM::CameraPose();
-        pMotionModel = new EdgeSLAM::MotionModel();
-
         EdgeSLAM::Tracker::Detector = pDetector;
         EdgeSLAM::SearchPoints::Detector = pDetector;
+        EdgeSLAM::RefFrame::detector = pDetector;
         EdgeSLAM::Frame::detector = pDetector;
         EdgeSLAM::MapPoint::Detector = pDetector;
-        //EdgeSLAM::RefFrame::MapPoints = mapMapPoints;
 
-        pTracker->mTrackState = EdgeSLAM::TrackingState::NotEstimated;
-        mapContentInfos.clear();
-        printf("init=end\n");
+
+        return;
+
     }
-
-    void ConnectDevice() {
-
-        pTracker = new EdgeSLAM::Tracker();
-        pTracker->path = strLogFile;
-
-        pMap = new EdgeSLAM::Map();
+    void DisconnectDevice(){
 
         if(pPrevFrame)
             delete pPrevFrame;
+        pPrevFrame = nullptr;
         if(pCurrFrame)
             delete pCurrFrame;
         pCurrFrame = nullptr;
-        pPrevFrame = nullptr;
+        if(pMotionModel)
+            delete pMotionModel;
+        pMotionModel = nullptr;
+
+        if(pTracker)
+            delete pTracker;
+        pTracker = nullptr;
+
+        if(pMap)
+            delete pMap;
+        pMap = nullptr;
+
+        /*
+        auto tempRefFrames = dequeRefFrames.get();
+        for(int i = 0; i < tempRefFrames.size(); i++)
+            delete tempRefFrames[i];
+        */
+
+        dequeRefFrames.Release();
+        mapSendedImages.Release();
+
+        auto mapGrids = cvGridFrames.Get();
+        for(auto iter = mapGrids.begin(), iend = mapGrids.end(); iter != iend; iter++){
+            delete iter->second;
+        }
+        cvGridFrames.Release();
+
+        ////save txt
+        std::string testfile = strPath+"/Experiment/upload.txt";
+        std::ofstream ofile2;
+        ofile2.open(testfile.c_str(), std::ios::trunc);
+        for(int i = 10; i <= 100; i+=10){
+            std::stringstream ss;
+            ss<<i<<" "<<testUploadCount[i]<<" "<<testUploadTime[i]<<" "<<testUploadTime[i]/testUploadCount[i]<<std::endl;
+            ofile2<<ss.str();
+        }
+        ofile2.close();
+
+        testfile = strPath+"/Experiment/download.txt";
+        ofile2.open(testfile.c_str(), std::ios::trunc);
+        for(auto iter = testDownloadTime.begin(), iend = testDownloadTime.end(); iter != iend ; iter++){
+            auto key = iter->first;
+            std::stringstream ss;
+            ss<<key<<" "<<testDownloadCount[key]<<" "<<testDownloadTime[key]<<" "<<testDownloadTime[key]/testDownloadCount[key]<<std::endl;
+            ofile2<<ss.str();
+        }
+        ofile2.close();
+        ////
+    }
+    void ConnectDevice() {
+
+        pTracker = new EdgeSLAM::Tracker();
+
+        pMap = new EdgeSLAM::Map();
 
         EdgeSLAM::RefFrame::nId = 0;
-        pCameraPose = new EdgeSLAM::CameraPose();
+        //pCameraPose = new EdgeSLAM::CameraPose();
         pMotionModel = new EdgeSLAM::MotionModel();
+
+        EdgeSLAM::RefFrame::MAP = pMap;
+        EdgeSLAM::MapPoint::MAP = pMap;
+
+        /*
         EdgeSLAM::Tracker::Detector = pDetector;
         EdgeSLAM::SearchPoints::Detector = pDetector;
         EdgeSLAM::RefFrame::detector = pDetector;
@@ -244,25 +278,50 @@ extern "C" {
         EdgeSLAM::MapPoint::Detector = pDetector;
         EdgeSLAM::RefFrame::MAP = pMap;
         EdgeSLAM::MapPoint::MAP = pMap;
-
+        */
         //EdgeSLAM::LocalMap::logFile = strLogFile;
         //EdgeSLAM::RefFrame::MapPoints = mapMapPoints;
-
+        mnLastUpdatedID = -1;
         pTracker->mTrackState = EdgeSLAM::TrackingState::NotEstimated;
         mapContentInfos.clear();
         LabeledImage = cv::Mat::zeros(0,0,CV_8UC4);
 
-        if(pPrevGrid)
-            delete pPrevGrid;
-        pPrevGrid = nullptr;
-        if(pCurrGrid)
-            delete pCurrGrid;
-        pCurrGrid = nullptr;
-        auto mapGrids = cvGridFrames.Get();
-        for(auto iter = mapGrids.begin(), iend = mapGrids.end(); iter != iend; iter++){
-            delete iter->second;
+        ////load txt
+        {
+            std::string s;
+            std::string testfile = strPath+"/Experiment/upload.txt";
+            std::ifstream ifile;
+            ifile.open(testfile);
+            for(int i = 10; i <= 100; i+=10){
+                getline(ifile, s);
+                std::stringstream ss;
+                int n, q;
+                float total, avg;
+                ss<< s;
+                ss >> q >> n >> total >> avg;
+
+                testUploadCount[i] = n;
+                testUploadTime[i] = total;
+                //ss<<i<<" = "<<testUploadCount[i]<<" "<<testUploadTime[i]<<" "<<testUploadTime[i]/testUploadCount[i]<<std::endl;
+                //ofile2<<ss.str();
+            }
+            ifile.close();
+            testfile = strPath+"/Experiment/download.txt";
+            ifile.open(testfile);
+            for(int i = 0; i < 3; i++){
+                getline(ifile, s);
+                std::stringstream ss;
+                std::string key;
+                int n;
+                float total, avg;
+                ss<< s;
+                ss >>key>> n >> total >> avg;
+                testDownloadCount[key] = n;
+                testDownloadTime[key] = total;
+            }
+            ifile.close();
         }
-        cvGridFrames.Release();
+
     }
 
     void* imuAddr;
@@ -273,11 +332,12 @@ extern "C" {
         bIMU = bimu;
 	}
 
-    int scale = 8;
+    int scale = 4;
     cv::Mat prevGray = cv::Mat::zeros(0,0,CV_8UC1);
     //https://learnopencv.com/optical-flow-in-opencv/
 
     void DenseFlow(int id, cv::Mat prev, cv::Mat curr){
+
         std::stringstream ss;
         ss<<"DenseFlow::Start::!!!!!! "<<id;
         WriteLog(ss.str());
@@ -285,50 +345,10 @@ extern "C" {
 
         cv::Mat flow;
 		cv::calcOpticalFlowFarneback(prev, curr, flow, 0.5, 3, 15, 3, 5, 1.1, 0);
-        mnCurrFrameID = id;
 
-        if(pPrevGrid){
-            WriteLog("delete = dense = start");
-            delete pPrevGrid;
-            WriteLog("delete = dense = end");
-        }
-        pPrevGrid = pCurrGrid;
-        pCurrGrid = new EdgeSLAM::GridFrame(flow.rows, flow.cols);
-        //flow update
-        if(pPrevGrid){
-            for(int y = 0, rows = flow.rows; y < rows; y++){
-                for(int x = 0, cols = flow.cols; x < cols; x++){
-                    cv::Point2f pt1(x,y);
-                    cv::Point2f pt2(x+flow.at<cv::Vec2f>(pt1).val[0], y+flow.at<cv::Vec2f>(pt1).val[1]);
-                    if(pt2.x <= 0 || pt2.y <= 0 || pt2.x >= flow.cols-1 || pt2.y >= flow.rows-1){
-                        continue;
-                    }
-                    auto pCell = pPrevGrid->mGrid[y][x];
-                    if(!pCell){
-                        continue;
-                    }
-                    pCurrGrid->mGrid[pt2.y][pt2.x] = pCell;
-                }
-            }
-        }
-        //WriteLog("b");
-        for(int y = 0, rows = flow.rows; y < rows; y++){
-            for(int x = 0, cols = flow.cols; x < cols; x++){
-                auto pCell = pCurrGrid->mGrid[y][x];
-                if(!pCell){
-                    pCell = new EdgeSLAM::GridCell();
-                    pCurrGrid->mGrid[y][x] = pCell;
-                }
-                pCell->AddObservation(pCurrGrid, y*rows+x);
-            }
-        }
-        //flow update
-        //WriteLog("c");
-        if(id % mnSkipFrame == 0){
-            auto newPGrid = new EdgeSLAM::GridFrame(flow.rows, flow.cols);
-            newPGrid->Copy(pCurrGrid);
-            cvGridFrames.Update(id,newPGrid);
-        }
+        auto pCurrGrid = new EdgeSLAM::GridFrame(flow.rows, flow.cols);
+        pCurrGrid->mFlow = flow.clone();
+        cvGridFrames.Update(id,pCurrGrid);
 
         std::chrono::high_resolution_clock::time_point s2 = std::chrono::high_resolution_clock::now();
 		auto d = std::chrono::duration_cast<std::chrono::milliseconds>(s2 - s1).count();
@@ -360,6 +380,7 @@ extern "C" {
         ss.str("");
 		ss<<"DenseFlow::End::!!!!!! "<<id<<"="<<t;
         WriteLog(ss.str());
+
     }
 
     int SetFrame(void* data, int id, double ts) {
@@ -377,30 +398,18 @@ extern "C" {
         cv::resize(gray, gray_resized, gray.size() / scale);
         if(prevGray.rows > 0){
             //POOL->EnqueueJob(DenseFlow, id, prevGray.clone(), gray_resized.clone());
+            DenseFlow(id, prevGray.clone(), gray_resized.clone());
             prevGray.release();
         }
         prevGray = gray_resized.clone();
-        /*
-        std::stringstream ss;
-        ss<<strPath<<"/color.jpg";
-        cv::imwrite(ss.str(), frame);
-        ss.str("");
-        ss<<strPath<<"/gray.jpg";
-        cv::imwrite(ss.str(), gray);
-        */
 
         if(id % mnSkipFrame == 0){
-            pMap->AddImage(gray.clone(), id);
+            mapSendedImages.Update(id,gray.clone());
         }
         if(pPrevFrame)
             delete pPrevFrame;
         pPrevFrame = pCurrFrame;
         pCurrFrame = new EdgeSLAM::Frame(gray, pCamera, id);
-        pCurrFrame->logfile = strLogFile;
-
-        //ofile<<"SetFrame="<<t_total<<std::endl;
-        //ofile.close();
-        //WriteLog("SetFrame::End");
 
         return pCurrFrame->N;
     }
@@ -408,6 +417,8 @@ extern "C" {
         if(key == "ReferenceFrame"){
             if(bTracking)
                 CreateReferenceFrame(id, data);
+        }else if(key == "ObjectDetection"){
+            AddObjectInfo(id, data);
         }
     }
 
@@ -437,6 +448,8 @@ extern "C" {
         float t = d / 1000.0;
         ss.str("");
         ss<<"download test ="<<t<<" "<<n2;
+        testDownloadCount[key]++;
+        testDownloadTime[key]+=t;
 
         //set data
         cv::Mat temp = cv::Mat::zeros(n2, 1, CV_8UC1);
@@ -458,31 +471,46 @@ extern "C" {
     }
 
     void CreateReferenceFrame(int id, cv::Mat data){
-        //WriteLog("SetReference::Start!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+        WriteLog("SetReference::Start!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
         //cv::Mat f1 = GetDataFromUnity("ReferenceFrame");
         //ReleaseUnityData("ReferenceFrame");
 
         auto pRefFrame = new EdgeSLAM::RefFrame(pCamera, (float*)data.data);
-        cv::Mat img = pMap->GetImage(id);
+        cv::Mat img = mapSendedImages.Get(id);
+        mapSendedImages.Erase(id);
         pDetector->Compute(img, cv::Mat(), pRefFrame->mvKeys, pRefFrame->mDescriptors);
         //std::vector<cv::Mat> vCurrentDesc = Utils::toDescriptorVector(pRefFrame->mDescriptors);
         //pVoc->transform(vCurrentDesc, pRefFrame->mBowVec, pRefFrame->mFeatVec, 4);
         pRefFrame->logfile = strLogFile;
         pRefFrame->UpdateMapPoints();
-        auto pPrefRef = pMap->GetReferenceFrame();
-        pRefFrame->mpParent = pPrefRef;
+        dequeRefFrames.push_back(pRefFrame);
 
         ////local map 갱신
         EdgeSLAM::LocalMap* pLocal = new EdgeSLAM::LocalMap();
         std::set<EdgeSLAM::MapPoint*> spMPs;
-        int nkf = 0;
-        EdgeSLAM::RefFrame* ref = nullptr;
-        EdgeSLAM::RefFrame* last = nullptr;
-
-        for(ref = pRefFrame; ref; ref = ref->mpParent, nkf++){
-            if(!ref || nkf >= mnKeyFrame){
-                break;
+        WriteLog("Reference::Delete::Start");
+        ////일정 레퍼런스 프레임이 생기면 디큐의 처음 레퍼런스 프레임 제거
+        EdgeSLAM::RefFrame* firstRef = nullptr;
+        if(dequeRefFrames.size() >= mnKeyFrame){
+            firstRef = dequeRefFrames.front();
+            dequeRefFrames.pop_front();
+            ////delete ref frame
+            if(firstRef){
+                auto vpMPs = firstRef->mvpMapPoints;
+                for(int i =0; i < firstRef->N; i++){
+                    auto pMP = vpMPs[i];
+                    if(!pMP || pMP->isBad()){
+                        continue;
+                    }
+                    pMP->EraseObservation(firstRef);
+                }
+                //delete firstRef;
             }
+        }
+        WriteLog("Reference::Delete::End");
+        auto vecRefFrames = dequeRefFrames.get();
+        for(int i = 0; i < vecRefFrames.size(); i++){
+            auto ref = vecRefFrames[i];
             auto vpMPs = ref->mvpMapPoints;
             for(int i =0; i < ref->N; i++){
                 auto pMP = vpMPs[i];
@@ -494,91 +522,213 @@ extern "C" {
                     spMPs.insert(pMP);
                 }
             }
-            last = ref;
         }
-
-        ////delete ref frame
-        if(ref){
-            auto vpMPs = ref->mvpMapPoints;
-            for(int i =0; i < ref->N; i++){
-                auto pMP = vpMPs[i];
-                if(!pMP || pMP->isBad()){
-                    continue;
-                }
-                pMP->EraseObservation(ref);
-            }
-            last->mpParent = nullptr;
-            delete ref;
-            //ofile<<"delete end"<<std::endl;
-        }
-
+        WriteLog("Reference::UpdateLocalMap::End");
         pMap->SetReferenceFrame(pRefFrame);
         pMap->SetLocalMap(pLocal);
         //f1.release();
-        //WriteLog("SetReference::End!!!!!!!!!!!!!!!!!!!");
+        WriteLog("SetReference::End!!!!!!!!!!!!!!!!!!!");
     }
 
     void SetReferenceFrame(int id) {
         //POOL->EnqueueJob(CreateReferenceFrame, id);
         //CreateReferenceFrame(id);
 	}
+	void VisualizeObjectFlow(cv::Mat& img, int endID){
+        int startID = mnLastUpdatedID.load();
+        if(startID < 0)
+            return;
+        int SX = mnWidth/scale-1;
+        int SY = mnHeight/scale-1;
 
-	void AddObjectInfo(int id){
+        auto flowGrids = cvGridFrames.Get();
+        auto vecCells  = flowGrids[startID]->vecCells.get();
+        //auto vecCells2 = flowGrids[endID]->vecCells.get();
+        bool bUpdate = false;//endID%mnSkipFrame == 0 && vecCells2.size() == 0;
 
+        for(int i = startID+1; i <= endID; i++){
+            std::stringstream ss;
+            ss<<"vis = "<<i<<" = "<<startID<<" "<<endID;
+            WriteLog(ss.str());
+            if(!flowGrids.count(i))
+                continue;
+            auto flow = flowGrids[i]->mFlow;
+            for(int j = 0, jend = vecCells.size(); j < jend; j++){
+                auto cell = vecCells[j];
+                auto pt = cell.pt;
+                if(pt.x < 0.0)
+                    continue;
+                if(pt.x >= SX-1 || pt.y >= SY-1 || pt.x <=1 || pt.y <= 1)
+                {
+                   pt.x = -1.0;
+                }else{
+                   cv::Vec2f val = flow.at<cv::Vec2f>(pt);
+                   if(val.val[0] == 0.0 && val.val[1] == 0.0)
+                   {
+                        pt.x = -1.0;
+                   }else{
+                    pt.x += val.val[0];
+                    pt.y += val.val[1];
+                   }
+
+                }
+                cell.pt = pt;
+                vecCells[j] = cell;
+            }
+        }
+        int n = 0;
+        for(int i = 0, iend = vecCells.size(); i < iend; i++){
+            auto pt = vecCells[i].pt;
+            if(pt.x < 0.0)
+                continue;
+            n++;
+            cv::circle(img, pt*scale, 4, cv::Scalar(255, 0, 0, 255));
+            if(bUpdate)
+                flowGrids[endID]->vecCells.push_back(vecCells[i]);
+        }
+        std::stringstream ss;
+        ss<<"VIS = "<<n<<" "<<vecCells.size();
+        WriteLog(ss.str());
+	}
+
+	void AddObjectInfo(int id, cv::Mat tdata){
+
+        /*
         std::stringstream ss;
         ss<<"ObjectProcessing::Start::!!!!!! "<<id;
         WriteLog(ss.str());
         std::chrono::high_resolution_clock::time_point s1 = std::chrono::high_resolution_clock::now();
-
+        */
         //std::unique_lock<std::mutex> lock(mMutexObjectInfo);
-        cv::Mat tdata = GetDataFromUnity("ObjectDetection");
-        ReleaseUnityData("ObjectDetection");
+
         int n = tdata.rows/24;
         cv::Mat obj = cv::Mat(n, 6, CV_32FC1, tdata.data);
 
-        if(cvGridFrames.Count(id)){
-            auto pGridFrame = cvGridFrames.Get(id);
-            int SX = pGridFrame->mGrid[0].size()-1;
-            int SY = pGridFrame->mGrid.size()-1;
+        auto flowGrids = cvGridFrames.Get();
+        int nMaxID = mnSendedID.load();
 
-            ss.str("");
-            ss<<"ObjectProcessing::"<<SX<<" "<<SY;
-            WriteLog(ss.str());
+        if(flowGrids.size() == 0)
+            return;
 
-            for(int j = 0, jend = obj.rows; j < jend ;j++){
-                cv::Point2f left(obj.at<float>(j, 2), obj.at<float>(j, 3));
-                cv::Point2f right(obj.at<float>(j, 4), obj.at<float>(j, 5));
-                int label = (int)obj.at<float>(j, 0)+1;
-                for(int x = left.x, xend = right.x; x < xend; x+=scale){
-                    for(int y = left.y, yend = right.y; y < yend; y+=scale){
-                        int sx = x/scale;
-                        int sy = y/scale;
-                        if (sx < 0 || sy < 0 || sx > SX || sy > SY )
-                            continue;
-                        auto pCell = pGridFrame->mGrid[sy][sx];
-                        if(pCell)
-                            pCell->mpObject->Update(label);
-                    }
+        int SX = mnWidth/scale-1;
+        int SY = mnHeight/scale-1;
+
+        //id 프레임에 포인트 추가 현재 진행 된 프레임.
+        //flow는 id-1을 id로 옮김.
+        //따라서, id를 id+1에 옮기기 위해서는 flow+1이 필요함.
+        std::vector<EdgeSLAM::GridCell> vecCells;
+        for(int j = 0, jend = obj.rows; j < jend ;j++){
+
+            cv::Point2f left(obj.at<float>(j, 2),  obj.at<float>(j, 3));
+            cv::Point2f right(obj.at<float>(j, 4), obj.at<float>(j, 5));
+
+            for(int x = left.x, xend = right.x; x < xend; x+=scale){
+                for(int y = left.y, yend = right.y; y < yend; y+=scale){
+                    int sx = x/scale;
+                    int sy = (mnHeight-y)/scale;
+                    if (sx <= 0 || sy <= 0 || sx >= SX || sy >= SY )
+                        continue;
+                    cv::Point2f pt = cv::Point2f(sx,sy);
+
+                    EdgeSLAM::GridCell cell;
+                    cell.pt = pt;
+                    flowGrids[id]->vecCells.push_back(cell);
                 }
             }
-            cvGridFrames.Erase(id);
-            if(pGridFrame){
-                WriteLog("Object = Delete = Start");
-                delete pGridFrame;
-                WriteLog("Object = Delete = End");
+        }
+        //기존 프레임에서 정보 추가
+        /*
+        for(int j = 0; j < flowGrids[id]->vecCells.size(); j++){
+            auto cell = flowGrids[id]->vecCells[j];
+            auto pt = cell.pt;
+            if(pt.x < 0.0)
+                continue;
+            vecCells.push_back(cell);
+        }
+        flowGrids[id]->vecCells.clear();
+        */
+        ////중복 체크와 인식 정보 갱신
+
+        /*
+        for(int i = id+1; i <= nMaxID; i++){
+            int tempCell = 0;
+            if(!flowGrids.count(i))
+                continue;
+            auto flow = flowGrids[i]->mFlow;
+
+            for(int j = 0; j < vecCells.size(); j++){
+                auto pt = vecCells[j].pt;
+                if(pt.x < 0.0)
+                    continue;
+                if(pt.x >= SX || pt.y >= SY || pt.x <=0 || pt.y <= 0)
+                {
+                    pt.x = -1.0;
+                }else{
+                    cv::Vec2f val = flow.at<cv::Vec2f>(pt);
+                    pt.x += val.val[0];
+                    pt.y += val.val[1];
+                    tempCell++;
+                }
+                vecCells[j].pt = pt;
+            }
+            {
+                std::stringstream ss;
+                ss<<"OBJ=id="<<i<<" "<<tempCell<<std::endl;
+                WriteLog(ss.str());
+            }
+            if(i % mnSkipFrame != 0){
+                continue;
+            }
+            for(int j = 0; j < flowGrids[i]->vecCells.size(); j++){
+                auto cell = flowGrids[i]->vecCells[j];
+                auto pt = cell.pt;
+                if(pt.x < 0.0)
+                    continue;
+                if(pt.x >= SX || pt.y >= SY || pt.x <=0 || pt.y <= 0)
+                {
+                    pt.x = -1.0;
+                }else{
+                    cv::Vec2f val = flow.at<cv::Vec2f>(pt);
+                    pt.x += val.val[0];
+                    pt.y += val.val[1];
+                }
+                cell.pt = pt;
+                vecCells.push_back(cell);
+            }
+        }
+        */
+
+        /*
+        ////추가
+        int nCell = 0;
+        for(int j = 0; j < vecCells.size(); j++){
+            auto pt = vecCells[j].pt;
+            if(pt.x < 0.0)
+                continue;
+            nCell++;
+            flowGrids[id]->vecCells.push_back(vecCells[j]);
+        }
+        */
+        mnLastUpdatedID = id;
+        for(int i = id; i < mnLastUpdatedID; i++){
+            if(cvGridFrames.Count(i)){
+                auto pFrame = cvGridFrames.Get(i);
+                cvGridFrames.Erase(i);
+                delete pFrame;
             }
         }
 
+        /*
         std::chrono::high_resolution_clock::time_point s2 = std::chrono::high_resolution_clock::now();
         auto d = std::chrono::duration_cast<std::chrono::milliseconds>(s2 - s1).count();
         float t = d / 1000.0;
         ss.str("");
         ss<<"ObjectProcessing::End::!!!!!!  "<<id<<"="<<t;
         WriteLog(ss.str());
-
+        */
 	}
     void AddObjectInfos(int id){
-        POOL->EnqueueJob(AddObjectInfo, id);
+        //POOL->EnqueueJob(AddObjectInfo, id);
     }
 
     void AddContent(int id, float x, float y, float z){
@@ -704,10 +854,10 @@ extern "C" {
 		return bTrack;
 	}
     std::mutex mMutexLogFile;
-    void WriteLog(std::string str){
+    void WriteLog(std::string str, std::ios_base::openmode mode){
         //std::string log(data);
         std::unique_lock<std::mutex> lock(mMutexLogFile);
-        ofile.open(strLogFile.c_str(), std::ios_base::out | std::ios_base::app);
+        ofile.open(strLogFile.c_str(), mode);
         ofile<<str<<"\n";
         ofile.close();
     }
@@ -746,8 +896,11 @@ extern "C" {
         }
         */
 
+        /*
         if(pCurrGrid){
             WriteLog("vis::start");
+
+
              for(int y = 0, rows = pCurrGrid->mGrid.size(); y < rows; y++){
                 for(int x = 0, cols = pCurrGrid->mGrid[0].size(); x < cols; x++){
                     auto pCell = pCurrGrid->mGrid[y][x];
@@ -761,6 +914,7 @@ extern "C" {
             }
             WriteLog("vis::end");
         }
+        */
 
         cv::Mat labeled;
         {
@@ -839,20 +993,29 @@ extern "C" {
         t.copyTo(P.row(3));
         StoreData("DevicePosition", id, strSource, ts, P.data, 48);
     }
+
     void SendImage(int id, double ts, int nQuality, cv::Mat frame){
         param[1] = nQuality;
         std::vector<uchar> buffer;
         cv::imencode(".jpg", frame, buffer, param);
-        //cv::Mat(buffer).clone().data
+
+        std::chrono::high_resolution_clock::time_point t1 = std::chrono::high_resolution_clock::now();
         StoreData("Image", id, strSource, ts, buffer.data(), buffer.size());
+        std::chrono::high_resolution_clock::time_point t2 = std::chrono::high_resolution_clock::now();
+        auto d = std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1).count();
+        float t = d / 1000.0;
+        testUploadCount[nQuality]++;
+        testUploadTime[nQuality]=testUploadTime[nQuality]+t;
+
     }
 
     bool Localization(void* data, int id, double ts, int nQuality, bool bTracking, bool bVisualization){
 
         std::chrono::high_resolution_clock::time_point t1 = std::chrono::high_resolution_clock::now();
-        ofile.open(strLogFile.c_str(), std::ios::trunc);
-        ofile<<"Localization::start\n";
-        ofile.close();
+        //ofile.open(strLogFile.c_str(), std::ios::trunc);
+        //ofile<<"Localization::start\n";
+        //ofile.close();
+        WriteLog("Localization::start");
 
         cv::Mat gray;
         bool res = true;
@@ -860,132 +1023,161 @@ extern "C" {
         //유니티에서 온 프레임
         cv::Mat ori_frame = cv::Mat(mnHeight, mnWidth, CV_8UC4, data);
         cv::Mat frame = ori_frame.clone();
-
-        ////convert color(a,r,g,b)->bgr
         cv::cvtColor(frame, frame, cv::COLOR_BGRA2RGB);
-        /*
-        std::vector<cv::Mat> colors(4);
-        cv::split(frame, colors);
-        std::vector<cv::Mat> colors2(3);
-        colors2[0] = colors[2];//a->3
-        colors2[1] = colors[1];//r->2
-        colors2[2] = colors[0];//g->1
-        //colors2[3] = colors[0];//b->0
-        cv::merge(colors2, frame);
-        */
         frame.convertTo(frame, CV_8UC3);
 
-        ////convert color(a,r,g,b)->bgr
         //NDK에서 이용하는 이미지로 변환
-
         cv::flip(frame, frame,0);
         cv::cvtColor(frame, gray, cv::COLOR_BGR2GRAY);//COLOR_BGRA2GRAY, COLOR_RGBA2GRAY
-
 
         if(id % mnSkipFrame == 0)
         {
             POOL->EnqueueJob(SendImage, id, ts, nQuality, frame);
+            mapSendedImages.Update(id,gray.clone());
+            mnSendedID = id;
         }
 
         ////데이터 트랜스퍼 용
-        /*
         cv::Mat gray_resized;
         cv::resize(gray, gray_resized, gray.size() / scale);
         if(prevGray.rows > 0){
-            //POOL->EnqueueJob(DenseFlow, id, prevGray.clone(), gray_resized.clone());
+            /*
+            if(bTracking)
+                POOL->EnqueueJob(DenseFlow, id, prevGray.clone(), gray_resized.clone());
+            else
+                DenseFlow(id, prevGray.clone(), gray_resized.clone());
             prevGray.release();
+            */
         }
         prevGray = gray_resized.clone();
-        */
         ////데이터 트랜스퍼 용
-        if(!bTracking){
-            return false;
-        }
 
-        if(id % mnSkipFrame == 0)
-        {
-            //그레이 이미지 기록
-            pMap->AddImage(gray.clone(), id);
-        }
-
-        ////이전 프레임 해제
-        if(pPrevFrame)
-            delete pPrevFrame;
-        pPrevFrame = pCurrFrame;
-        pCurrFrame = new EdgeSLAM::Frame(gray, pCamera, id);
-        pCurrFrame->logfile = strLogFile;
-
-        //트래킹
         bool bTrack = false;
-		int nMatch = -1;
+        int nMatch = -1;
+        if(bTracking){
 
-		if (pTracker->mTrackState == EdgeSLAM::TrackingState::NotEstimated || pTracker->mTrackState == EdgeSLAM::TrackingState::Failed) {
-			EdgeSLAM::RefFrame* rf = pMap->GetReferenceFrame();
-			if (rf) {
-				nMatch = pTracker->TrackWithReferenceFrame(rf, pCurrFrame, 100.0, 50.0);
-				bTrack = nMatch >= 10;
-				if (bTrack) {
-					pTracker->mnLastRelocFrameId = pCurrFrame->mnFrameID;
-				}
-			}
-		}
+            ////이전 프레임 해제
+            if(pPrevFrame)
+                delete pPrevFrame;
+            pPrevFrame = pCurrFrame;
+            pCurrFrame = new EdgeSLAM::Frame(gray, pCamera, id);
 
-		if (pTracker->mTrackState == EdgeSLAM::TrackingState::Success) {
-			//predict
-			if(bIMU){
-                cv::Mat Rgyro = cv::Mat(3,3, CV_32FC1,imuAddr);
-                cv::Mat tacc = cv::Mat::zeros(3,1,CV_32FC1);
-                cv::Mat Timu = cv::Mat::eye(4,4,CV_32FC1);
-                Rgyro.copyTo(Timu.rowRange(0,3).colRange(0,3));
-                tacc.copyTo(Timu.rowRange(0,3).col(3));
-                cv::Mat Tprev = pPrevFrame->GetPose();
-                pCurrFrame->SetPose(Timu*Tprev);
+            if (pTracker->mTrackState == EdgeSLAM::TrackingState::NotEstimated || pTracker->mTrackState == EdgeSLAM::TrackingState::Failed) {
+                EdgeSLAM::RefFrame* rf = pMap->GetReferenceFrame();
+                if (rf) {
+                    nMatch = pTracker->TrackWithReferenceFrame(rf, pCurrFrame, 100.0, 50.0);
+                    bTrack = nMatch >= 10;
+                    if (bTrack) {
+                        pTracker->mnLastRelocFrameId = pCurrFrame->mnFrameID;
+                    }
+                }
+            }
 
-			}else
-			    pCurrFrame->SetPose(pMotionModel->predict());
+            if (pTracker->mTrackState == EdgeSLAM::TrackingState::Success) {
+                //predict
+                if(bIMU){
+                    cv::Mat Rgyro = cv::Mat(3,3, CV_32FC1,imuAddr);
+                    cv::Mat tacc = cv::Mat::zeros(3,1,CV_32FC1);
+                    cv::Mat Timu = cv::Mat::eye(4,4,CV_32FC1);
+                    Rgyro.copyTo(Timu.rowRange(0,3).colRange(0,3));
+                    tacc.copyTo(Timu.rowRange(0,3).col(3));
+                    cv::Mat Tprev = pPrevFrame->GetPose();
+                    pCurrFrame->SetPose(Timu*Tprev);
+                }else
+                    pCurrFrame->SetPose(pMotionModel->predict());
+                WriteLog("Localization::TrackPrev::Start");
+                nMatch = pTracker->TrackWithPrevFrame(pPrevFrame, pCurrFrame, 100.0, 50.0);
+                WriteLog("Localization::TrackPrev::End");
+                bTrack = nMatch >= 10;
+                if (!bTrack) {
+                    EdgeSLAM::RefFrame* rf = pMap->GetReferenceFrame();
+                    if (rf) {
+                        nMatch = pTracker->TrackWithReferenceFrame(rf, pCurrFrame, 100.0, 50.0);
+                        bTrack = nMatch >= 10;
+                    }
+                }
+                WriteLog("Localization::TrackPrev::End2");
+            }
 
-			nMatch = pTracker->TrackWithPrevFrame(pPrevFrame, pCurrFrame, 100.0, 50.0);
-            WriteLog("Tracker::Prev::123123");
-			bTrack = nMatch >= 10;
-			if (!bTrack) {
-				EdgeSLAM::RefFrame* rf = pMap->GetReferenceFrame();
-				if (rf) {
-					nMatch = pTracker->TrackWithReferenceFrame(rf, pCurrFrame, 100.0, 50.0);
-					bTrack = nMatch >= 10;
-				}
-			}
-			WriteLog("Tracker::Prev::End");
-		}
+            if (bTrack) {
+                EdgeSLAM::LocalMap* pLocal = new EdgeSLAM::LocalMap();
+                pMap->GetLocalMap(pLocal);
+                nMatch = 4;
+                WriteLog("Localization::TrackLocalMap::Start");
+                nMatch = pTracker->TrackWithLocalMap(pCurrFrame, pLocal, 100.0, 50.0);
+                WriteLog("Localization::TrackLocalMap::End");
+                if (pCurrFrame->mnFrameID < pTracker->mnLastRelocFrameId + 30 && nMatch < 30) {
+                    bTrack = false;
+                }
+                else if (nMatch < 30) {
+                    bTrack = false;
+                }
+                else {
+                    bTrack = true;
+                }
+                delete pLocal;
+            }
+            if (bTrack) {
+                pTracker->mTrackState = EdgeSLAM::TrackingState::Success;
+                cv::Mat T = pCurrFrame->GetPose();
+                pMotionModel->update(T);
+                POOL->EnqueueJob(SendDevicePose, id, ts, T.clone());
+            }
+            else {
+                WriteLog("Tracking::Failed", std::ios::trunc);
+                pTracker->mTrackState = EdgeSLAM::TrackingState::Failed;
+                pMotionModel->reset();
 
-		if (bTrack) {
-			EdgeSLAM::LocalMap* pLocal = new EdgeSLAM::LocalMap();
-			pMap->GetLocalMap(pLocal);
-			nMatch = 4;
-			nMatch = pTracker->TrackWithLocalMap(pCurrFrame, pLocal, 100.0, 50.0);
+            }
 
-			if (pCurrFrame->mnFrameID < pTracker->mnLastRelocFrameId + 30 && nMatch < 30) {
-				bTrack = false;
-			}
-			else if (nMatch < 30) {
-				bTrack = false;
-			}
-			else {
-				bTrack = true;
-			}
-			delete pLocal;
-		}
-		if (bTrack) {
-			pTracker->mTrackState = EdgeSLAM::TrackingState::Success;
-			cv::Mat T = pCurrFrame->GetPose();
-			pMotionModel->update(T);
-			POOL->EnqueueJob(SendDevicePose, id, ts, T.clone());
-		}
-		else {
-			pTracker->mTrackState = EdgeSLAM::TrackingState::Failed;
-			pMotionModel->reset();
-		}
+
+
+        }
 
         //시각화
+        if(bVisualization){
+
+            std::vector<cv::Mat> colors(4);
+            cv::split(ori_frame, colors);
+            std::vector<cv::Mat> colors2(4);
+            colors2[0] = colors[3];
+            colors2[1] = colors[0];//2
+            colors2[2] = colors[1];//1
+            colors2[3] = colors[2];//0
+            cv::merge(colors2, ori_frame);
+
+            //VisualizeObjectFlow(ori_frame, id);
+
+            /*
+            if(pCurrGrid){
+                 for(int y = 0, rows = pCurrGrid->mGrid.size(); y < rows; y++){
+                    for(int x = 0, cols = pCurrGrid->mGrid[0].size(); x < cols; x++){
+                        auto pCell = pCurrGrid->mGrid[y][x];
+
+                        float fx = x+pCurrGrid->mFlow.at<cv::Vec2f>(y,x).val[0];
+                        float fy = y+pCurrGrid->mFlow.at<cv::Vec2f>(y,x).val[1];
+
+                        float nx = fx*scale;
+                        float ny = fy*scale;
+
+                        if(nx <= 0 || ny <= 0 || nx >= mnWidth-1 || ny >= mnHeight-1){
+                            continue;
+                        }
+
+                        cv::Point2f pt(fx*scale,fy*scale);
+                        //cv::circle(ori_frame, pt, 4, cv::Scalar(255,255,0,0), -1);
+
+                        if(pCell){
+                            if(pCell->mpObject->GetLabel()>0){
+                                cv::circle(ori_frame, pt, 4, SemanticColors[pCell->mpObject->GetLabel()], -1);
+                            }
+                        }
+                    }
+                }
+            }
+            */
+        }
+
         std::chrono::high_resolution_clock::time_point t2 = std::chrono::high_resolution_clock::now();
 		auto d = std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1).count();
 		float t = d / 1000.0;

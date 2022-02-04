@@ -77,9 +77,6 @@ namespace EdgeSLAM {
 		cv::Mat GetRotation();
 		cv::Mat GetTranslation();
 
-    public:
-        std::string logfile;
-
 	};
 }
 #endif

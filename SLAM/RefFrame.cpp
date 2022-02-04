@@ -10,8 +10,7 @@ namespace EdgeSLAM {
 	RefFrame::RefFrame() {}
     RefFrame::RefFrame(Camera* pCam, float* data) :mpCamera(pCam), mnId(RefFrame::nId++),
     		K(pCam->K), D(pCam->D), fx(pCam->fx), fy(pCam->fy), cx(pCam->cx), cy(pCam->cy), invfx(pCam->invfx), invfy(pCam->invfy), mnMinX(pCam->u_min), mnMaxX(pCam->u_max), mnMinY(pCam->v_min), mnMaxY(pCam->v_max), mfGridElementWidthInv(pCam->mfGridElementWidthInv), mfGridElementHeightInv(pCam->mfGridElementHeightInv), FRAME_GRID_COLS(pCam->mnGridCols), FRAME_GRID_ROWS(pCam->mnGridRows), mbDistorted(pCam->bDistorted),
-    		mnScaleLevels(detector->mnScaleLevels), mfScaleFactor(detector->mfScaleFactor), mfLogScaleFactor(detector->mfLogScaleFactor), mvScaleFactors(detector->mvScaleFactors), mvInvScaleFactors(detector->mvInvScaleFactors), mvLevelSigma2(detector->mvLevelSigma2), mvInvLevelSigma2(detector->mvInvLevelSigma2),
-    		mpParent(nullptr)
+    		mnScaleLevels(detector->mnScaleLevels), mfScaleFactor(detector->mfScaleFactor), mfLogScaleFactor(detector->mfLogScaleFactor), mvScaleFactors(detector->mvScaleFactors), mvInvScaleFactors(detector->mvInvScaleFactors), mvLevelSigma2(detector->mvLevelSigma2), mvInvLevelSigma2(detector->mvInvLevelSigma2)
     {
         N = (int)data[0];
         mvKeys = std::vector<cv::KeyPoint>(N);
@@ -48,11 +47,11 @@ namespace EdgeSLAM {
                 continue;
 
             MapPoint* pMP = nullptr;
-            if(MAP->CheckMapPoint(id)){
-                pMP = MAP->GetMapPoint(id);
+            if(MAP->mapMapPoints.Count(id)){
+                pMP = MAP->mapMapPoints.Get(id);
             }else{
                 pMP = new MapPoint(id, x, y, z);
-                MAP->AddMapPoint(id, pMP);
+                MAP->mapMapPoints.Update(id, pMP);
             }
             pMP->mpRefKF = this;
             mvpMapPoints[i] = pMP;
@@ -67,8 +66,7 @@ namespace EdgeSLAM {
     }
 	RefFrame::RefFrame(Camera* pCam, cv::Mat desc, float* data) :mpCamera(pCam), mnId(RefFrame::nId++),
     		K(pCam->K), D(pCam->D), fx(pCam->fx), fy(pCam->fy), cx(pCam->cx), cy(pCam->cy), invfx(pCam->invfx), invfy(pCam->invfy), mnMinX(pCam->u_min), mnMaxX(pCam->u_max), mnMinY(pCam->v_min), mnMaxY(pCam->v_max), mfGridElementWidthInv(pCam->mfGridElementWidthInv), mfGridElementHeightInv(pCam->mfGridElementHeightInv), FRAME_GRID_COLS(pCam->mnGridCols), FRAME_GRID_ROWS(pCam->mnGridRows), mbDistorted(pCam->bDistorted),
-    		mnScaleLevels(detector->mnScaleLevels), mfScaleFactor(detector->mfScaleFactor), mfLogScaleFactor(detector->mfLogScaleFactor), mvScaleFactors(detector->mvScaleFactors), mvInvScaleFactors(detector->mvInvScaleFactors), mvLevelSigma2(detector->mvLevelSigma2), mvInvLevelSigma2(detector->mvInvLevelSigma2),
-    		mpParent(nullptr)
+    		mnScaleLevels(detector->mnScaleLevels), mfScaleFactor(detector->mfScaleFactor), mfLogScaleFactor(detector->mfLogScaleFactor), mvScaleFactors(detector->mvScaleFactors), mvInvScaleFactors(detector->mvInvScaleFactors), mvLevelSigma2(detector->mvLevelSigma2), mvInvLevelSigma2(detector->mvInvLevelSigma2)
     {
         N = (int)data[0];
         int nIdx = 13;
@@ -102,12 +100,12 @@ namespace EdgeSLAM {
             float z = data[nIdx++];
 
             MapPoint* pMP = nullptr;
-            if(MAP->CheckMapPoint(id)){
-                pMP = MAP->GetMapPoint(id);
+            if(MAP->mapMapPoints.Count(id)){
+                pMP = MAP->mapMapPoints.Get(id);
                 pMP->SetWorldPos(x,y,z);
             }else{
                 pMP = new MapPoint(id, x, y, z);
-                MAP->AddMapPoint(id, pMP);
+                MAP->mapMapPoints.Update(id, pMP);
             }
             mvpMapPoints[i] = pMP;
             //pMP->SetReferenceFrame(this);

@@ -3,6 +3,7 @@
 #include "Frame.h"
 #include "ORBDetector.h"
 #include "Map.h"
+#include "ConcurrentMap.h"
 
 namespace EdgeSLAM {
 
@@ -13,7 +14,10 @@ namespace EdgeSLAM {
 		mWorldPos.at<float>(1) = _y;
 		mWorldPos.at<float>(2) = _z;
 	}
-	MapPoint::~MapPoint(){}
+	MapPoint::~MapPoint(){
+	    std::map<RefFrame*, size_t>().swap(mObservations);
+
+	}
 
     cv::Mat MapPoint::GetWorldPos()
 	{
@@ -176,7 +180,7 @@ namespace EdgeSLAM {
             RefFrame* pKF = mit->first;
             pKF->EraseMapPointMatch(mit->second);
         }
-        MAP->RemoveMapPoint(this->mnID);
+        MAP->mapMapPoints.Erase(this->mnID);
     }
     bool MapPoint::isBad()
 	{

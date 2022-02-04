@@ -32,15 +32,17 @@ namespace EdgeSLAM {
 		GridCell();
 		virtual ~GridCell();
 	public:
-		void AddObservation(GridFrame* pGF, int idx);
-		void EraseObservation(GridFrame* pGF);
-		void SetBadFlag();
-		bool isBad();
+	    cv::Point2f pt;
+	    std::map<int, int> mapObjectID;
+	    std::map<int, int> mapSegLabel;
+		//void AddObservation(GridFrame* pGF, int idx);
+		//void EraseObservation(GridFrame* pGF);
+		//void SetBadFlag();
+		//bool isBad();
 	public:
-		std::atomic<bool> mbBad;
-		cv::Point2f pt;
-		ConcurrentMap<GridFrame*, int> mapObservation;
-		Label *mpObject, *mpSegLabel;
+		//std::atomic<bool> mbBad;
+		//ConcurrentMap<GridFrame*, int> mapObservation;
+		//Label *mpObject, *mpSegLabel;
 	};
 
 }

@@ -30,8 +30,6 @@ namespace EdgeSLAM {
 		int UpdateVisiblePoints(Frame* cur, std::vector<MapPoint*> vpLocalMPs);
 		int UpdateFoundPoints(Frame* cur, bool bOnlyTracking = false);
 		//bool NeedNewKeyFrame(Frame* cur, RefFrame* ref, int nKFs, int nMatchesInliers);
-
-		std::string path;
 	public:
 		std::atomic<int> mnLastRelocFrameId, mnLastKeyFrameId;
 		int mnMaxFrame, mnMinFrame;

@@ -124,9 +124,9 @@ namespace EdgeSLAM {
 
 	int SearchPoints::SearchFrameByProjection(Frame* prev, Frame* curr, float thMaxDesc, float thMinDesc, float thProjection, bool bCheckOri) {
 
-        std::ofstream ofile;
-        ofile.open(LogFile.c_str(), std::ios_base::out | std::ios_base::app);
-        ofile<<"SearchPoints::SearchFrameByProjection::a"<<std::endl;
+        //std::ofstream ofile;
+        //ofile.open(LogFile.c_str(), std::ios_base::out | std::ios_base::app);
+        //ofile<<"SearchPoints::SearchFrameByProjection::a"<<std::endl;
 
 		int nmatches = 0;
 
@@ -138,9 +138,12 @@ namespace EdgeSLAM {
 		*/
 		const float factor = 1.0f / HISTO_LENGTH;
 		cv::Mat Tcw = curr->GetPose();
-		const cv::Mat Rcw = Tcw.rowRange(0, 3).colRange(0, 3);
-		const cv::Mat tcw = Tcw.rowRange(0, 3).col(3);
+		//ofile<<"SearchPoints::SearchFrameByProjection::111"<<std::endl;
+		cv::Mat Rcw = Tcw.rowRange(0, 3).colRange(0, 3);
+		//ofile<<"SearchPoints::SearchFrameByProjection::222"<<std::endl;
+		cv::Mat tcw = Tcw.rowRange(0, 3).col(3);
 
+        /*
         ofile<<"SearchPoints::SearchFrameByProjection::b"<<std::endl;
         std::stringstream ss;
         ss<<Rcw<<std::endl;
@@ -151,7 +154,7 @@ namespace EdgeSLAM {
         ss.str("");
         ss<<Tcw.t()<<std::endl;
         ofile<<ss.str();
-
+        */
 		for (int i = 0; i<prev->N; i++)
 		{
 			MapPoint* pMP = prev->mvpMapPoints[i];
@@ -232,7 +235,7 @@ namespace EdgeSLAM {
 				}
 			}
 		}
-        ofile<<"SearchPoints::SearchFrameByProjection::c"<<std::endl;
+        //ofile<<"SearchPoints::SearchFrameByProjection::c"<<std::endl;
 		if (bCheckOri)
 		{
 			int ind1 = -1;
@@ -253,17 +256,17 @@ namespace EdgeSLAM {
 				}
 			}
 		}
-		ofile<<"SearchPoints::SearchFrameByProjection::d"<<std::endl;
-		ofile.close();
+		//ofile<<"SearchPoints::SearchFrameByProjection::d"<<std::endl;
+		//ofile.close();
 		return nmatches;
 	}
 
 	int SearchPoints::SearchMapByProjection(Frame *F, const std::vector<MapPoint*> &vpMapPoints, float thMaxDesc, float thMinDesc, float thRadius, float thMatchRatio, bool bCheckOri)
 	{
 
-	    std::ofstream ofile;
-        ofile.open(LogFile.c_str(), std::ios_base::out | std::ios_base::app);
-        ofile<<"SearchPoints::SearchMapByProjection::a"<<std::endl;
+	    //std::ofstream ofile;
+        //ofile.open(LogFile.c_str(), std::ios_base::out | std::ios_base::app);
+        //ofile<<"SearchPoints::SearchMapByProjection::a"<<std::endl;
 
 		int nmatches = 0;
 		const bool bFactor = thRadius != 1.0;
@@ -334,8 +337,8 @@ namespace EdgeSLAM {
 				nmatches++;
 			}
 		}
-        ofile<<"SearchPoints::SearchMapByProjection::b"<<std::endl;
-        ofile.close();
+        //ofile<<"SearchPoints::SearchMapByProjection::b"<<std::endl;
+        //ofile.close();
 		return nmatches;
 	}
 

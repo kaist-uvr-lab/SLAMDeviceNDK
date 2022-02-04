@@ -10,7 +10,9 @@ namespace EdgeSLAM {
 		mpCamPose = new CameraPose(_T);
 	}
 	MotionModel::~MotionModel() {
-
+        delete mpCamPose;
+        deltaT.release();
+        covariance.release();
 	}
 	void MotionModel::reset() {
 		mpCamPose->SetPose(cv::Mat::eye(4, 4, CV_32FC1));

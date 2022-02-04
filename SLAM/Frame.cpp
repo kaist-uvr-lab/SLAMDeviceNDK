@@ -28,6 +28,7 @@ namespace EdgeSLAM {
         std::set<MapPoint*>().swap(mspMapPoints);
         std::vector<bool>().swap(mvbOutliers);
 
+        delete mpCamPose;
 	}
 	Frame::Frame(cv::Mat img, Camera* pCam, int id, double time_stamp) :mnFrameID(id), mdTimeStamp(time_stamp), mpCamera(pCam),
 		K(pCam->K), D(pCam->D), fx(pCam->fx), fy(pCam->fy), cx(pCam->cx), cy(pCam->cy), invfx(pCam->invfx), invfy(pCam->invfy), mnMinX(pCam->u_min), mnMaxX(pCam->u_max), mnMinY(pCam->v_min), mnMaxY(pCam->v_max), mfGridElementWidthInv(pCam->mfGridElementWidthInv), mfGridElementHeightInv(pCam->mfGridElementHeightInv), FRAME_GRID_COLS(pCam->mnGridCols), FRAME_GRID_ROWS(pCam->mnGridRows), mbDistorted(pCam->bDistorted),
