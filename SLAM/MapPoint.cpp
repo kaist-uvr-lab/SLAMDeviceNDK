@@ -180,7 +180,7 @@ namespace EdgeSLAM {
             RefFrame* pKF = mit->first;
             pKF->EraseMapPointMatch(mit->second);
         }
-        MAP->mapMapPoints.Erase(this->mnID);
+        MAP->MapPoints.Erase(this->mnID);
     }
     bool MapPoint::isBad()
 	{

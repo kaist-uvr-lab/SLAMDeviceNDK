@@ -20,6 +20,7 @@ public:
 	size_t Size();
 	size_t Erase(T1 id);
 	void Release();
+	void Clear();
 };
 
 template <class T1, class T2>
@@ -65,5 +66,9 @@ void ConcurrentMap<T1, T2>::Release() {
 	std::unique_lock<std::mutex> lock(mMutex);
 	std::map<T1, T2>().swap(mMap);
 }
-
+template <class T1, class T2>
+void ConcurrentMap<T1, T2>::Clear() {
+	std::unique_lock<std::mutex> lock(mMutex);
+	mMap.clear();
+}
 #endif

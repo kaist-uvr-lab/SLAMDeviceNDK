@@ -11,19 +11,14 @@ extern "C" {
     void ConnectDevice();
     void DisconnectDevice();
 
-    void SetDataFromUnity(void* data, char* path, int len, int strlen);
-    cv::Mat GetDataFromUnity(std::string keyword);
-    void ReleaseUnityData(std::string keyword);
-
-    void Parsing(int id, std::string key, cv::Mat data, bool bTracking);
+    void Parsing(int id, std::string key, const cv::Mat& data, bool bTracking);
     void LoadData(std::string key, int id, std::string src, bool bTracking);
-    void CreateReferenceFrame(int id, cv::Mat data);
-    bool Track(void* pose);
+    void CreateReferenceFrame(int id, const cv::Mat& data);
 
-    int  SetFrame(void* data, int id, double ts);
-    void SetReferenceFrame(int id);
     void SetIMUAddress(void* addr, bool bIMU);
 
+    void UpdateLocalMapContent(const cv::Mat& data);
+    void UpdateLocalMapPlane(const cv::Mat& data);
     void AddObjectInfo(int id, cv::Mat data);
     void AddObjectInfos(int id);
     void AddContentInfo(int id, float x, float y, float z);
@@ -31,10 +26,8 @@ extern "C" {
     void SemanticColorInit();
     void Segmentation(int id);
 
+    void TouchProcessInit(int touchID, float x, float y, double ts);
     void WriteLog(std::string str, std::ios_base::openmode mode = std::ios_base::out | std::ios_base::app);
-
-    bool VisualizeFrame(void* data);
-    //bool GetMatchingImage(void* data);
 
     void TestUploaddata(char* data, int datalen, int id, char* ckey, int clen1, char* csrc, int clen2, double ts);
     void TestDownloaddata(int id, char* ckey, int clen1, char* csrc, int clen2, bool bTracking);

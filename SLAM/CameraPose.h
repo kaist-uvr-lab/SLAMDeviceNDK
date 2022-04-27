@@ -13,6 +13,7 @@ namespace EdgeSLAM {
 		CameraPose(cv::Mat T);
 		virtual ~CameraPose();
 	public:
+	    void Init();
 		void SetPose(cv::Mat T);
 		cv::Mat GetPose();
 		void GetPose(cv::Mat& R, cv::Mat& t);

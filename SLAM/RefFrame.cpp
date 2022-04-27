@@ -43,15 +43,15 @@ namespace EdgeSLAM {
             float y = data[nIdx++];
             float z = data[nIdx++];
 
-            if(kp.octave >= detector->mnScaleLevels)
-                continue;
+            //if(kp.octave >= detector->mnScaleLevels)
+            //    continue;
 
             MapPoint* pMP = nullptr;
-            if(MAP->mapMapPoints.Count(id)){
-                pMP = MAP->mapMapPoints.Get(id);
+            if(MAP->MapPoints.Count(id)){
+                pMP = MAP->MapPoints.Get(id);
             }else{
                 pMP = new MapPoint(id, x, y, z);
-                MAP->mapMapPoints.Update(id, pMP);
+                MAP->MapPoints.Update(id, pMP);
             }
             pMP->mpRefKF = this;
             mvpMapPoints[i] = pMP;
@@ -100,12 +100,12 @@ namespace EdgeSLAM {
             float z = data[nIdx++];
 
             MapPoint* pMP = nullptr;
-            if(MAP->mapMapPoints.Count(id)){
-                pMP = MAP->mapMapPoints.Get(id);
+            if(MAP->MapPoints.Count(id)){
+                pMP = MAP->MapPoints.Get(id);
                 pMP->SetWorldPos(x,y,z);
             }else{
                 pMP = new MapPoint(id, x, y, z);
-                MAP->mapMapPoints.Update(id, pMP);
+                MAP->MapPoints.Update(id, pMP);
             }
             mvpMapPoints[i] = pMP;
             //pMP->SetReferenceFrame(this);
@@ -221,7 +221,7 @@ namespace EdgeSLAM {
         return true;
     }
 
-	void RefFrame::SetPose(const cv::Mat &Tcw) {
+	void RefFrame::SetPose(cv::Mat Tcw) {
 		mpCamPose->SetPose(Tcw);
 	}
 	cv::Mat RefFrame::GetPose() {

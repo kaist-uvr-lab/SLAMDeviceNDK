@@ -28,13 +28,13 @@ namespace EdgeSLAM {
         std::set<MapPoint*>().swap(mspMapPoints);
         std::vector<bool>().swap(mvbOutliers);
 
-        delete mpCamPose;
+        //delete mpCamPose;
 	}
-	Frame::Frame(cv::Mat img, Camera* pCam, int id, double time_stamp) :mnFrameID(id), mdTimeStamp(time_stamp), mpCamera(pCam),
-		K(pCam->K), D(pCam->D), fx(pCam->fx), fy(pCam->fy), cx(pCam->cx), cy(pCam->cy), invfx(pCam->invfx), invfy(pCam->invfy), mnMinX(pCam->u_min), mnMaxX(pCam->u_max), mnMinY(pCam->v_min), mnMaxY(pCam->v_max), mfGridElementWidthInv(pCam->mfGridElementWidthInv), mfGridElementHeightInv(pCam->mfGridElementHeightInv), FRAME_GRID_COLS(pCam->mnGridCols), FRAME_GRID_ROWS(pCam->mnGridRows), mbDistorted(pCam->bDistorted),
+	Frame::Frame(const cv::Mat& img, Camera* pCam, int id, double time_stamp) :mnFrameID(id), mdTimeStamp(time_stamp), mpCamera(pCam),
+		K(pCam->K), D(pCam->D), Kfluker(pCam->Kfluker), fx(pCam->fx), fy(pCam->fy), cx(pCam->cx), cy(pCam->cy), invfx(pCam->invfx), invfy(pCam->invfy), mnMinX(pCam->u_min), mnMaxX(pCam->u_max), mnMinY(pCam->v_min), mnMaxY(pCam->v_max), mfGridElementWidthInv(pCam->mfGridElementWidthInv), mfGridElementHeightInv(pCam->mfGridElementHeightInv), FRAME_GRID_COLS(pCam->mnGridCols), FRAME_GRID_ROWS(pCam->mnGridRows), mbDistorted(pCam->bDistorted),
 		mnScaleLevels(detector->mnScaleLevels), mfScaleFactor(detector->mfScaleFactor), mfLogScaleFactor(detector->mfLogScaleFactor), mvScaleFactors(detector->mvScaleFactors), mvInvScaleFactors(detector->mvInvScaleFactors), mvLevelSigma2(detector->mvLevelSigma2), mvInvLevelSigma2(detector->mvInvLevelSigma2)
 	{
-		mpCamPose = new CameraPose();
+		//mpCamPose = new CameraPose();
 		//imgColor = img.clone();
 		//cv::cvtColor(imgColor, imgGray, cv::COLOR_BGR2GRAY);//COLOR_BGR2GRAY
 		detector->detectAndCompute(img, cv::Mat(), mvKeys, mDescriptors);
@@ -50,76 +50,8 @@ namespace EdgeSLAM {
 			mGrid[i] = new std::vector<size_t>[FRAME_GRID_ROWS];
 		
 		AssignFeaturesToGrid();
+		SetPose(cv::Mat::eye(4,4,CV_32FC1));
 	}
-	/*
-	Frame::Frame(void* data, Camera* pCam, int id, double time_stamp) :mnFrameID(id), mdTimeStamp(time_stamp), mpCamera(pCam),
-		K(pCam->K), D(pCam->D), fx(pCam->fx), fy(pCam->fy), cx(pCam->cx), cy(pCam->cy), invfx(pCam->invfx), invfy(pCam->invfy), mnMinX(pCam->u_min), mnMaxX(pCam->u_max), mnMinY(pCam->v_min), mnMaxY(pCam->v_max), mfGridElementWidthInv(pCam->mfGridElementWidthInv), mfGridElementHeightInv(pCam->mfGridElementHeightInv), FRAME_GRID_COLS(pCam->mnGridCols), FRAME_GRID_ROWS(pCam->mnGridRows), mbDistorted(pCam->bDistorted),
-		mnScaleLevels(detector->mnScaleLevels), mfScaleFactor(detector->mfScaleFactor), mfLogScaleFactor(detector->mfLogScaleFactor), mvScaleFactors(detector->mvScaleFactors), mvInvScaleFactors(detector->mvInvScaleFactors), mvLevelSigma2(detector->mvLevelSigma2), mvInvLevelSigma2(detector->mvInvLevelSigma2)
-	{
-		//mpCamPose = new CameraPose();
-		cv::Mat temp = cv::Mat(pCam->mnHeight, pCam->mnWidth, CV_8UC4, data);
-		imgColor = temp.clone();
-		cv::flip(imgColor, imgColor, 0);
-		cv::cvtColor(imgColor, imgGray, cv::COLOR_BGRA2GRAY);//COLOR_BGR2GRAY
-		detector->detectAndCompute(imgGray, cv::Mat(), mvKeys, mDescriptors);
-		N = mvKeys.size();
-
-		if (mbDistorted)
-			UndistortKeyPoints();
-		else
-			mvKeysUn = mvKeys;
-
-		mGrid = new std::vector<size_t>*[FRAME_GRID_COLS];
-		for (int i = 0; i < FRAME_GRID_COLS; i++)
-			mGrid[i] = new std::vector<size_t>[FRAME_GRID_ROWS];
-
-		AssignFeaturesToGrid();
-	}
-	Frame::Frame(Color* data, Camera* pCam, int id, double time_stamp):mnFrameID(id), mdTimeStamp(time_stamp), mpCamera(pCam),
-		K(pCam->K), D(pCam->D), fx(pCam->fx), fy(pCam->fy), cx(pCam->cx), cy(pCam->cy), invfx(pCam->invfx), invfy(pCam->invfy), mnMinX(pCam->u_min), mnMaxX(pCam->u_max), mnMinY(pCam->v_min), mnMaxY(pCam->v_max), mfGridElementWidthInv(pCam->mfGridElementWidthInv), mfGridElementHeightInv(pCam->mfGridElementHeightInv), FRAME_GRID_COLS(pCam->mnGridCols), FRAME_GRID_ROWS(pCam->mnGridRows), mbDistorted(pCam->bDistorted),
-		mnScaleLevels(detector->mnScaleLevels), mfScaleFactor(detector->mfScaleFactor), mfLogScaleFactor(detector->mfLogScaleFactor), mvScaleFactors(detector->mvScaleFactors), mvInvScaleFactors(detector->mvInvScaleFactors), mvLevelSigma2(detector->mvLevelSigma2), mvInvLevelSigma2(detector->mvInvLevelSigma2)
-	{
-		//mpCamPose = new CameraPose();
-		imgColor = cv::Mat(pCam->mnHeight, pCam->mnWidth, CV_8UC3, data);
-		cv::cvtColor(imgColor, imgGray, cv::COLOR_BGR2GRAY);//COLOR_BGR2GRAY
-		detector->detectAndCompute(imgGray, cv::Mat(), mvKeys, mDescriptors);
-		N = mvKeys.size();
-
-		if (mbDistorted)
-			UndistortKeyPoints();
-		else
-			mvKeysUn = mvKeys;
-
-		mGrid = new std::vector<size_t>*[FRAME_GRID_COLS];
-		for (int i = 0; i < FRAME_GRID_COLS; i++)
-			mGrid[i] = new std::vector<size_t>[FRAME_GRID_ROWS];
-
-		AssignFeaturesToGrid();
-	}
-	Frame::Frame(Color32* data, Camera* pCam, int id, double time_stamp) :mnFrameID(id), mdTimeStamp(time_stamp), mpCamera(pCam),
-		K(pCam->K), D(pCam->D), fx(pCam->fx), fy(pCam->fy), cx(pCam->cx), cy(pCam->cy), invfx(pCam->invfx), invfy(pCam->invfy), mnMinX(pCam->u_min), mnMaxX(pCam->u_max), mnMinY(pCam->v_min), mnMaxY(pCam->v_max), mfGridElementWidthInv(pCam->mfGridElementWidthInv), mfGridElementHeightInv(pCam->mfGridElementHeightInv), FRAME_GRID_COLS(pCam->mnGridCols), FRAME_GRID_ROWS(pCam->mnGridRows), mbDistorted(pCam->bDistorted),
-		mnScaleLevels(detector->mnScaleLevels), mfScaleFactor(detector->mfScaleFactor), mfLogScaleFactor(detector->mfLogScaleFactor), mvScaleFactors(detector->mvScaleFactors), mvInvScaleFactors(detector->mvInvScaleFactors), mvLevelSigma2(detector->mvLevelSigma2), mvInvLevelSigma2(detector->mvInvLevelSigma2)
-	{
-		//mpCamPose = new CameraPose();
-		imgColor = cv::Mat(pCam->mnHeight, pCam->mnWidth, CV_8UC4, data);
-
-		cv::flip(imgColor, imgColor, 0);
-		cv::cvtColor(imgColor, imgGray, cv::COLOR_BGR2GRAY);//COLOR_BGR2GRAY
-		detector->detectAndCompute(imgGray, cv::Mat(), mvKeys, mDescriptors);
-		N = mvKeys.size();
-
-		if (mbDistorted)
-			UndistortKeyPoints();
-		else
-			mvKeysUn = mvKeys;
-
-		mGrid = new std::vector<size_t>*[FRAME_GRID_COLS];
-		for (int i = 0; i < FRAME_GRID_COLS; i++)
-			mGrid[i] = new std::vector<size_t>[FRAME_GRID_ROWS];
-
-		AssignFeaturesToGrid();
-	}
-	*/
 
 	void Frame::reset_map_points() {
 		mvpMapPoints = std::vector<MapPoint*>(mvKeysUn.size(), nullptr);
@@ -129,9 +61,19 @@ namespace EdgeSLAM {
 	bool Frame::is_in_frustum(MapPoint* pMP, float viewingCosLimit) {
         pMP->mbTrackInView = false;
 		cv::Mat P = pMP->GetWorldPos();
-		cv::Mat Rw = mpCamPose->GetRotation();
-		cv::Mat tw = mpCamPose->GetTranslation();
-		cv::Mat Ow = mpCamPose->GetCenter();
+
+		//cv::Mat Rw = mpCamPose->GetRotation();
+		//cv::Mat tw = mpCamPose->GetTranslation();
+		//cv::Mat Ow = mpCamPose->GetCenter();
+		cv::Mat Rw;
+		cv::Mat tw;
+		cv::Mat Ow2;
+		{
+		    std::unique_lock<std::mutex> lock(mMutexPose);
+		    Rw = Rcw.clone();
+		    tw = tcw.clone();
+		    Ow2 = Ow.clone();
+		}
 
 		// 3D in camera coordinates
 		const cv::Mat Pc = Rw*P + tw;
@@ -154,7 +96,7 @@ namespace EdgeSLAM {
         // Check distance is in the scale invariance region of the MapPoint
 		const float maxDistance = pMP->GetMaxDistanceInvariance();
 		const float minDistance = pMP->GetMinDistanceInvariance();
-		const cv::Mat PO = P - Ow;
+		const cv::Mat PO = P - Ow2;
 		const float dist = cv::norm(PO);
 
 		if (dist<minDistance || dist>maxDistance)
@@ -279,22 +221,44 @@ namespace EdgeSLAM {
 		return true;
 	}
 
-	void Frame::SetPose(const cv::Mat &Tcw) {
-		mpCamPose->SetPose(Tcw);
+	void Frame::SetPose(cv::Mat T) {
+		//mpCamPose->SetPose(T);
+		std::unique_lock<std::mutex> lock(mMutexPose);
+        Tcw = T.clone();
+        Rcw = Tcw.rowRange(0, 3).colRange(0, 3);
+        tcw = Tcw.col(3).rowRange(0, 3);
+        Ow = -Rcw.t()*tcw;
 	}
 	cv::Mat Frame::GetPose() {
-		return mpCamPose->GetPose().clone();
+		//return mpCamPose->GetPose().clone();
+		std::unique_lock<std::mutex> lock(mMutexPose);
+        return Tcw.clone();
 	}
 	cv::Mat Frame::GetPoseInverse() {
-		return mpCamPose->GetInversePose();
+		//return mpCamPose->GetInversePose();
+		std::unique_lock<std::mutex> lock(mMutexPose);
+        cv::Mat Tinv = cv::Mat::eye(4, 4, CV_32FC1);
+        cv::Mat rinv = Rcw.t();
+        cv::Mat tinv = Ow.clone();
+        rinv.copyTo(Tinv.rowRange(0, 3).colRange(0, 3));
+        tinv.copyTo(Tinv.col(3).rowRange(0, 3));
+        return Tinv.clone();
 	}
 	cv::Mat Frame::GetCameraCenter() {
-		return mpCamPose->GetCenter();
+		//return mpCamPose->GetCenter();
+		std::unique_lock<std::mutex> lock(mMutexPose);
+        return Ow.clone();
 	}
+
 	cv::Mat Frame::GetRotation() {
-		return mpCamPose->GetRotation();
+		//return mpCamPose->GetRotation();
+		std::unique_lock<std::mutex> lock(mMutexPose);
+		return Rcw.clone();
 	}
 	cv::Mat Frame::GetTranslation() {
-		return mpCamPose->GetTranslation();
+		//return mpCamPose->GetTranslation();
+		std::unique_lock<std::mutex> lock(mMutexPose);
+		return tcw.clone();
 	}
+
 }

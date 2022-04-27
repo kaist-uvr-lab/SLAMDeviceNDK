@@ -11,7 +11,7 @@
 #include "Tracker.h"
 #include "CameraPose.h"
 #include "MotionModel.h"
-#include "LocalMap.h"
+#include "PlaneProcessor.h"
 #include "GridCell.h"
 #include "GridFrame.h"
 
@@ -28,8 +28,10 @@
 //���� https://darkstart.tistory.com/42
 extern "C" {
 
-    std::map<int, int> testUploadCount;
-    std::map<int, float> testUploadTime;
+    //std::map<int, int> testUploadCount;
+    //std::map<int, float> testUploadTime;
+    ConcurrentMap<std::string, int> testUploadCount;
+    ConcurrentMap<std::string, float> testUploadTime;
 
     std::map<std::string, int> testDownloadCount;
     std::map<std::string, float> testDownloadTime;
@@ -37,8 +39,15 @@ extern "C" {
     std::string strSource;
     std::vector<int> param = std::vector<int>(2);
 
+    ConcurrentMap<int, cv::Mat> LocalMapContents;
+    ConcurrentMap<int, cv::Mat> LocalMapPlanes; //floor, ceil
+    ConcurrentMap<int, cv::Mat> LocalMapWallPlanes; //wall
+    ConcurrentMap<int, cv::Mat> LocalMapPlaneLines; //lw
+    ConcurrentMap<int, cv::Mat> LocalMapPlaneProjectionLines; //lc
+
     ConcurrentMap<int, cv::Mat> mapSendedImages;
     ConcurrentDeque<EdgeSLAM::RefFrame*> dequeRefFrames;
+    ConcurrentVector<EdgeSLAM::MapPoint*> LocalMapPoints;
 
 	EdgeSLAM::Frame* pCurrFrame = nullptr;
 	EdgeSLAM::Frame* pPrevFrame = nullptr;
@@ -58,9 +67,6 @@ extern "C" {
 	EdgeSLAM::ORBDetector* EdgeSLAM::Frame::detector;
 	EdgeSLAM::Map* EdgeSLAM::RefFrame::MAP;
 	EdgeSLAM::Map* EdgeSLAM::MapPoint::MAP;
-
-    std::map<int, cv::Mat> mapContentInfos;
-    std::mutex mMutexContentInfo;
 
     //플로우를 이용해서 데이터 트랜스퍼
     ConcurrentMap<int, EdgeSLAM::GridFrame*> cvGridFrames;
@@ -118,6 +124,7 @@ extern "C" {
 		}
 	}
     void Segmentation(int id){
+        /*
         std::unique_lock<std::mutex> lock(mMutexSegmentation);
         cv::Mat tdata = GetDataFromUnity("Segmentation");
         ReleaseUnityData("Segmentation");
@@ -136,6 +143,7 @@ extern "C" {
                 LabeledImage.at<cv::Vec4b>(y, x) = SemanticColors[label];
             }
         }
+        */
     }
 
     void SetUserName(char* c_src, int len){
@@ -211,6 +219,9 @@ extern "C" {
         if(pMotionModel)
             delete pMotionModel;
         pMotionModel = nullptr;
+        if(pCameraPose)
+            delete pCameraPose;
+        pCameraPose = nullptr;
 
         if(pTracker)
             delete pTracker;
@@ -220,12 +231,14 @@ extern "C" {
             delete pMap;
         pMap = nullptr;
 
+
+
         /*
         auto tempRefFrames = dequeRefFrames.get();
         for(int i = 0; i < tempRefFrames.size(); i++)
             delete tempRefFrames[i];
         */
-
+        LocalMapPoints.Release();
         dequeRefFrames.Release();
         mapSendedImages.Release();
 
@@ -239,11 +252,23 @@ extern "C" {
         std::string testfile = strPath+"/Experiment/upload.txt";
         std::ofstream ofile2;
         ofile2.open(testfile.c_str(), std::ios::trunc);
+        auto upCountData = testUploadCount.Get();
+        auto upTimeData = testUploadTime.Get();
+        for(auto iter = upCountData.begin(), iend = upCountData.end(); iter != iend; iter++){
+            auto key = iter->first;
+            int c = iter->second;
+            float t= upTimeData[key];
+            std::stringstream ss;
+            ss<<key<<" "<<c<<" "<<t<<" "<<t/c<<std::endl;
+            ofile2<<ss.str();
+        }
+        /*
         for(int i = 10; i <= 100; i+=10){
             std::stringstream ss;
             ss<<i<<" "<<testUploadCount[i]<<" "<<testUploadTime[i]<<" "<<testUploadTime[i]/testUploadCount[i]<<std::endl;
             ofile2<<ss.str();
         }
+        */
         ofile2.close();
 
         testfile = strPath+"/Experiment/download.txt";
@@ -264,7 +289,7 @@ extern "C" {
         pMap = new EdgeSLAM::Map();
 
         EdgeSLAM::RefFrame::nId = 0;
-        //pCameraPose = new EdgeSLAM::CameraPose();
+        pCameraPose = new EdgeSLAM::CameraPose();
         pMotionModel = new EdgeSLAM::MotionModel();
 
         EdgeSLAM::RefFrame::MAP = pMap;
@@ -283,7 +308,6 @@ extern "C" {
         //EdgeSLAM::RefFrame::MapPoints = mapMapPoints;
         mnLastUpdatedID = -1;
         pTracker->mTrackState = EdgeSLAM::TrackingState::NotEstimated;
-        mapContentInfos.clear();
         LabeledImage = cv::Mat::zeros(0,0,CV_8UC4);
 
         ////load txt
@@ -292,6 +316,20 @@ extern "C" {
             std::string testfile = strPath+"/Experiment/upload.txt";
             std::ifstream ifile;
             ifile.open(testfile);
+            while(!ifile.eof()){
+                getline(ifile, s);
+                std::stringstream ss;
+                std::string key;
+                int n;
+                float total, avg;
+                ss<< s;
+                ss >>key>> n >> total >> avg;
+                testUploadCount.Update(key, n);
+                testUploadTime.Update(key, total);
+                if(ifile.eof())
+                    break;
+            }
+            /*
             for(int i = 10; i <= 100; i+=10){
                 getline(ifile, s);
                 std::stringstream ss;
@@ -305,6 +343,7 @@ extern "C" {
                 //ss<<i<<" = "<<testUploadCount[i]<<" "<<testUploadTime[i]<<" "<<testUploadTime[i]/testUploadCount[i]<<std::endl;
                 //ofile2<<ss.str();
             }
+            */
             ifile.close();
             testfile = strPath+"/Experiment/download.txt";
             ifile.open(testfile);
@@ -383,42 +422,16 @@ extern "C" {
 
     }
 
-    int SetFrame(void* data, int id, double ts) {
-        //ofile.open(strLogFile.c_str(), std::ios_base::out | std::ios_base::app);
-        //ofile<<"Frame start"<<std::endl;
-        //WriteLog("SetFrame::Start");
-        cv::Mat gray;
-        bool res = true;
-        cv::Mat frame = cv::Mat(mnHeight, mnWidth, CV_8UC4, data);
-        //cv::cvtColor(frame, frame, cv::COLOR_BGRA2RGBA);
-        cv::flip(frame, frame,0);
-        cv::cvtColor(frame, gray, cv::COLOR_BGRA2GRAY);//COLOR_BGRA2GRAY, COLOR_RGBA2GRAY
-
-        cv::Mat gray_resized;
-        cv::resize(gray, gray_resized, gray.size() / scale);
-        if(prevGray.rows > 0){
-            //POOL->EnqueueJob(DenseFlow, id, prevGray.clone(), gray_resized.clone());
-            DenseFlow(id, prevGray.clone(), gray_resized.clone());
-            prevGray.release();
-        }
-        prevGray = gray_resized.clone();
-
-        if(id % mnSkipFrame == 0){
-            mapSendedImages.Update(id,gray.clone());
-        }
-        if(pPrevFrame)
-            delete pPrevFrame;
-        pPrevFrame = pCurrFrame;
-        pCurrFrame = new EdgeSLAM::Frame(gray, pCamera, id);
-
-        return pCurrFrame->N;
-    }
-    void Parsing(int id, std::string key, cv::Mat data, bool bTracking){
+    void Parsing(int id, std::string key, const cv::Mat& data, bool bTracking){
         if(key == "ReferenceFrame"){
             if(bTracking)
                 CreateReferenceFrame(id, data);
         }else if(key == "ObjectDetection"){
             AddObjectInfo(id, data);
+        }else if(key == "PlaneLine"){
+            UpdateLocalMapPlane(data);
+        }else if(key == "LocalContent"){
+            UpdateLocalMapContent(data);
         }
     }
 
@@ -455,8 +468,140 @@ extern "C" {
         cv::Mat temp = cv::Mat::zeros(n2, 1, CV_8UC1);
         std::memcpy(temp.data, res.data(), n2);
         Parsing(id, key, temp, bTracking);
-        temp.release();
-        //WriteLog(ss.str());
+
+    }
+    void TouchProcess(int id, float x, float y, double ts){
+        std::stringstream ss;
+		ss <<"/Store?keyword="<<"ContentGeneration"<<"&id="<<id<<"&src="<<strSource<<"&ts="<<std::fixed<<std::setprecision(6)<<ts;
+		//std::chrono::high_resolution_clock::time_point s1 = std::chrono::high_resolution_clock::now();
+		WebAPI api("143.248.6.143", 35005);
+		float data[1000] = {0.0,};
+        data[0] = x;
+        data[1] = y;
+        cv::Mat x3D = cv::Mat::ones(1,3,CV_32FC1);
+        x3D.at<float>(0) = x;
+        x3D.at<float>(1) = y;
+
+        cv::Mat R, t;
+        pCameraPose->GetPose(R,t);
+
+        cv::Mat Xw = pCamera->Kinv * x3D.t();
+        Xw.push_back(cv::Mat::ones(1,1,CV_32FC1)); //3x1->4x1
+        Xw = pCameraPose->GetInversePose()*Xw; // 4x4 x 4 x 1
+        float testaaasdf = Xw.at<float>(3);
+        Xw = Xw.rowRange(0,3)/Xw.at<float>(3); // 4x1 -> 3x1
+        cv::Mat Ow = pCameraPose->GetCenter(); // 3x1
+        cv::Mat dir = Xw-Ow; //3x1
+
+        auto planes = LocalMapPlanes.Get();
+        float min_val = 10000.0;
+        cv::Mat min_param;
+        for(auto iter = planes.begin(), iend = planes.end(); iter != iend; iter++){
+            cv::Mat param = iter->second; //4x1
+            cv::Mat normal = param.rowRange(0,3); //3x1
+            float dist = param.at<float>(3);
+            float a = normal.dot(-dir);
+            if(std::abs(a) < 0.000001)
+                continue;
+            float u = (normal.dot(Ow)+dist)/a;
+            if(u > 0.0 && u < min_val){
+                min_val = u;
+                min_param = param;
+            }
+        }
+        if(min_val < 10000.0){
+            //복원
+            cv::Mat res =  Ow+dir*min_val;
+            data[2] = res.at<float>(0);
+            data[3] = res.at<float>(1);
+            data[4] = res.at<float>(2);
+            data[5] = testaaasdf;
+            data[6] = min_val;
+        }
+
+        auto mapPlaneLine = LocalMapPlaneProjectionLines.Get();
+        if(mapPlaneLine.count(10)){
+            cv::Mat lines = mapPlaneLine[10];
+            cv::Mat resa = x3D*lines;
+            for(int i = 0; i < 8; i++){
+                float val = 0.0;
+                if(resa.at<float>(i) > 0)
+                    val = 1.0;
+                if(resa.at<float>(i) < 0)
+                    val = -1.0;
+                resa.at<float>(i) = val;
+                //data[i+5] = val;
+            }
+            //floor
+            int id = -1;
+            if(resa.at<float>(0) == 1 && resa.at<float>(2) == -1){
+                id = 0;
+            }
+            //ceil
+            else if(resa.at<float>(1) == 1 && resa.at<float>(3) == -1){
+                id = 1;
+            }
+            if(id >= 0){
+                cv::Mat p = LocalMapPlanes.Get(id);
+                cv::Mat Tinv = pCameraPose->GetInversePose();
+                cv::Mat Pinv = EdgeSLAM::PlaneProcessor::CalcInverPlaneParam(p, Tinv);
+                cv::Mat Xnorm = pCamera->Kinv*x3D.t();
+                float depth = EdgeSLAM::PlaneProcessor::CalculateDepth(Xnorm, Pinv);
+                cv::Mat Xw = EdgeSLAM::PlaneProcessor::CreateWorldPoint(Xnorm, Tinv, depth);
+                //data[2] = Xw.at<float>(0);
+                //data[3] = Xw.at<float>(1);
+                //data[4] = Xw.at<float>(2);
+            }
+
+            std::chrono::high_resolution_clock::time_point t1 = std::chrono::high_resolution_clock::now();
+            //StoreData("Image", id, strSource, ts, buffer.data(), buffer.size());
+            auto res = api.Send(ss.str(), (const unsigned char*)data, sizeof(float)*1000);
+            std::chrono::high_resolution_clock::time_point t2 = std::chrono::high_resolution_clock::now();
+            auto d = std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1).count();
+            float t = d / 1000.0;
+            int c = testUploadCount.Get("ContentGeneration")+1;
+            float total = testUploadTime.Get("ContentGeneration")+t;
+            testUploadCount.Update("ContentGeneration", c);
+            testUploadTime.Update("ContentGeneration", total);
+
+        }
+        /*
+        cv::Mat lines = cv::Mat::zeros(3,8,CV_32FC1);
+        for(auto iter = mapPlaneLine.begin(), iend = mapPlaneLine.end(); iter != iend; iter++){
+            int label = iter->first-2;
+            cv::Mat Lw = iter->second;
+            cv::Mat line = EdgeSLAM::PlaneProcessor::LineProjection(R, t, Lw, pCamera->Kfluker);
+            {
+            std::stringstream ss;
+            ss<<label<<" "<<line.t()<<std::endl;
+            WriteLog(ss.str());
+            }
+            //line.copyTo(lines.colRange(label, label+1));
+            line.copyTo(lines.col(label));
+        }
+        {
+        std::stringstream ss;
+        ss<<lines<<std::endl;
+        WriteLog(ss.str());
+        }
+        WriteLog("touch3???");
+        cv::Mat resa = x3D*lines;
+        for(int i = 0; i < 8; i++){
+            float val = 0.0;
+            if(resa.at<float>(i) > 0)
+                val = 1.0;
+            if(resa.at<float>(i) <>> 0)
+                val = -1.0;
+            data[i+2] = val;
+        }
+        */
+        //data[2] = resa.at<float>(0);
+        //data[3] = resa.at<float>(1);
+
+
+    }
+    void TouchProcessInit(int touchID, float x, float y, double ts){
+        POOL->EnqueueJob(TouchProcess, touchID, x, y, ts);
     }
 
     void TestUploaddata(char* data, int datalen, int id, char* ckey, int clen1, char* csrc, int clen2, double ts){
@@ -470,70 +615,71 @@ extern "C" {
         POOL->EnqueueJob(LoadData, key, id, src, bTracking);
     }
 
-    void CreateReferenceFrame(int id, cv::Mat data){
-        WriteLog("SetReference::Start!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+    void CreateReferenceFrame(int id, const cv::Mat& data){
+        WriteLog("SetReference::Start!!!!!!!!!!!!!!!!!!!!!!!!!!!!");//, std::ios::trunc
         //cv::Mat f1 = GetDataFromUnity("ReferenceFrame");
         //ReleaseUnityData("ReferenceFrame");
+        float* tdata = (float*)data.data;
+        int N = (int)tdata[0];
+        if(N > 30){
+            auto pRefFrame = new EdgeSLAM::RefFrame(pCamera, tdata);
+            cv::Mat img = mapSendedImages.Get(id);
+            mapSendedImages.Erase(id);
+            pDetector->Compute(img, cv::Mat(), pRefFrame->mvKeys, pRefFrame->mDescriptors);
+            //std::vector<cv::Mat> vCurrentDesc = Utils::toDescriptorVector(pRefFrame->mDescriptors);
+            //pVoc->transform(vCurrentDesc, pRefFrame->mBowVec, pRefFrame->mFeatVec, 4);
 
-        auto pRefFrame = new EdgeSLAM::RefFrame(pCamera, (float*)data.data);
-        cv::Mat img = mapSendedImages.Get(id);
-        mapSendedImages.Erase(id);
-        pDetector->Compute(img, cv::Mat(), pRefFrame->mvKeys, pRefFrame->mDescriptors);
-        //std::vector<cv::Mat> vCurrentDesc = Utils::toDescriptorVector(pRefFrame->mDescriptors);
-        //pVoc->transform(vCurrentDesc, pRefFrame->mBowVec, pRefFrame->mFeatVec, 4);
-        pRefFrame->logfile = strLogFile;
-        pRefFrame->UpdateMapPoints();
-        dequeRefFrames.push_back(pRefFrame);
+            pRefFrame->UpdateMapPoints();
+            dequeRefFrames.push_back(pRefFrame);
 
-        ////local map 갱신
-        EdgeSLAM::LocalMap* pLocal = new EdgeSLAM::LocalMap();
-        std::set<EdgeSLAM::MapPoint*> spMPs;
-        WriteLog("Reference::Delete::Start");
-        ////일정 레퍼런스 프레임이 생기면 디큐의 처음 레퍼런스 프레임 제거
-        EdgeSLAM::RefFrame* firstRef = nullptr;
-        if(dequeRefFrames.size() >= mnKeyFrame){
-            firstRef = dequeRefFrames.front();
-            dequeRefFrames.pop_front();
-            ////delete ref frame
-            if(firstRef){
-                auto vpMPs = firstRef->mvpMapPoints;
-                for(int i =0; i < firstRef->N; i++){
-                    auto pMP = vpMPs[i];
-                    if(!pMP || pMP->isBad()){
+            ////local map 갱신
+            std::set<EdgeSLAM::MapPoint*> spMPs;
+            WriteLog("Reference::Delete::Start");
+            ////일정 레퍼런스 프레임이 생기면 디큐의 처음 레퍼런스 프레임 제거
+            EdgeSLAM::RefFrame* firstRef = nullptr;
+            if(dequeRefFrames.size() >= mnKeyFrame){
+                firstRef = dequeRefFrames.front();
+                dequeRefFrames.pop_front();
+                ////delete ref frame
+                if(firstRef){
+                    auto vpMPs = firstRef->mvpMapPoints;
+                    for(int i =0; i < firstRef->N; i++){
+                        auto pMP = vpMPs[i];
+                        if(!pMP || pMP->isBad()){
+                            continue;
+                        }
+                        pMP->EraseObservation(firstRef);
+                    }
+                    //delete firstRef;
+                }
+            }
+            WriteLog("Reference::Delete::End");
+            std::vector<EdgeSLAM::MapPoint*> vecMPs;
+            auto vecRefFrames = dequeRefFrames.get();
+            for(int i = 0; i < vecRefFrames.size(); i++){
+                auto ref = vecRefFrames[i];
+                if(!ref)
+                    continue;
+                auto vpMPs = ref->mvpMapPoints;
+                for(int j =0; j < ref->N; j++){
+                    auto pMP = vpMPs[j];
+                    if(!pMP || pMP->isBad() || spMPs.count(pMP)){
                         continue;
                     }
-                    pMP->EraseObservation(firstRef);
-                }
-                //delete firstRef;
-            }
-        }
-        WriteLog("Reference::Delete::End");
-        auto vecRefFrames = dequeRefFrames.get();
-        for(int i = 0; i < vecRefFrames.size(); i++){
-            auto ref = vecRefFrames[i];
-            auto vpMPs = ref->mvpMapPoints;
-            for(int i =0; i < ref->N; i++){
-                auto pMP = vpMPs[i];
-                if(!pMP || pMP->isBad() || spMPs.count(pMP)){
-                    continue;
-                }
-                if(pRefFrame->is_in_frustum(pMP, 0.5)){
-                    pLocal->mvpMapPoints.push_back(pMP);
-                    spMPs.insert(pMP);
+                    if(pRefFrame->is_in_frustum(pMP, 0.5)){
+                        vecMPs.push_back(pMP);
+                        spMPs.insert(pMP);
+                    }
                 }
             }
+            WriteLog("Reference::UpdateLocalMap::End");
+            pMap->SetReferenceFrame(pRefFrame);
+            LocalMapPoints.set(vecMPs);
+            //f1.release();
         }
-        WriteLog("Reference::UpdateLocalMap::End");
-        pMap->SetReferenceFrame(pRefFrame);
-        pMap->SetLocalMap(pLocal);
-        //f1.release();
         WriteLog("SetReference::End!!!!!!!!!!!!!!!!!!!");
     }
 
-    void SetReferenceFrame(int id) {
-        //POOL->EnqueueJob(CreateReferenceFrame, id);
-        //CreateReferenceFrame(id);
-	}
 	void VisualizeObjectFlow(cv::Mat& img, int endID){
         int startID = mnLastUpdatedID.load();
         if(startID < 0)
@@ -590,6 +736,98 @@ extern "C" {
         ss<<"VIS = "<<n<<" "<<vecCells.size();
         WriteLog(ss.str());
 	}
+
+    void UpdateLocalMapContent(const cv::Mat& data){
+        {
+            std::stringstream ss;
+            ss<<"Update Local Map = Start"<<std::endl;
+            WriteLog(ss.str(), std::ios::trunc);
+        }
+        float* tdata = (float*)data.data;
+        int N = (int)tdata[0];
+        int dataIdx = 1;
+        LocalMapContents.Clear();
+        for(int i = 0; i < N; i++){
+            int id = (int)tdata[dataIdx++];
+            cv::Mat pos = cv::Mat::zeros(3,1,CV_32FC1);
+            pos.at<float>(0) = tdata[dataIdx++];
+            pos.at<float>(1) = tdata[dataIdx++];
+            pos.at<float>(2) = tdata[dataIdx++];
+            LocalMapContents.Update(id, pos);
+        }
+        {
+        std::stringstream ss;
+        ss<<"Update Local Map = "<<N<<std::endl;
+        WriteLog(ss.str());
+        }
+    }
+
+    void UpdateLocalMapPlane(const cv::Mat& data){
+        float* tdata = (float*)data.data;
+        int N = (int)tdata[0];
+        int dataIdx = 1;
+        LocalMapPlanes.Clear(); //0은 바닥, 1은 천장, 이후는 벽임.
+        LocalMapWallPlanes.Clear();
+        LocalMapPlaneLines.Clear(); //그것의 교선.
+        bool bFloor = false;
+        bool bCeil = false;
+        cv::Mat floor;
+        cv::Mat ceil;
+        for(int i = 0; i < N; i++){
+            int label = (int)tdata[dataIdx++];
+            cv::Mat plane = cv::Mat::zeros(4,1,CV_32FC1);
+            plane.at<float>(0) = tdata[dataIdx++];
+            plane.at<float>(1) = tdata[dataIdx++];
+            plane.at<float>(2) = tdata[dataIdx++];
+            plane.at<float>(3) = tdata[dataIdx++];
+            if(label == 0){
+                bFloor = true;
+                floor = plane.clone();
+            }
+            if(label == 1){
+                bCeil = true;
+                ceil = plane.clone();
+            }
+            LocalMapPlanes.Update(label, plane);
+            if(label > 1)
+                LocalMapWallPlanes.Update(label, plane);
+            /*
+            cv::Mat line = cv::Mat::zeros(6,1,CV_32FC1);
+            line.at<float>(0) = tdata[dataIdx++];
+            line.at<float>(1) = tdata[dataIdx++];
+            line.at<float>(2) = tdata[dataIdx++];
+            line.at<float>(3) = tdata[dataIdx++];
+            line.at<float>(4) = tdata[dataIdx++];
+            line.at<float>(5) = tdata[dataIdx++];
+            //(cv::Mat_<float>(6, 1) << tdata[dataIdx++],tdata[dataIdx++],tdata[dataIdx++],tdata[dataIdx++],tdata[dataIdx++],tdata[dataIdx++]);
+            LocalMapPlaneLines.Update(label, line);
+            */
+        }
+        auto wallPlanes = LocalMapWallPlanes.Get();
+        for(auto iter = wallPlanes.begin(), iend = wallPlanes.end(); iter != iend; iter++){
+            int label = iter->first;
+            cv::Mat param = iter->second;
+
+            if(bFloor){
+                cv::Mat Lw1;
+                Lw1 = EdgeSLAM::PlaneProcessor::CalcFlukerLine(floor, param);
+                /*
+                cv::Mat line = LineProjection(R, t, Lw, pUser->mpCamera->Kfluker);
+                if (line.at<float>(0) < 0.0)
+                    line *= -1.0;
+                int id = 1;
+                if (line.at<float>(1) < 0.0)
+                    id++;
+                */
+                LocalMapPlaneLines.Update(label, Lw1);
+            }
+            if(bCeil){
+                cv::Mat Lw2;
+                Lw2 = EdgeSLAM::PlaneProcessor::CalcFlukerLine(ceil, param);
+                LocalMapPlaneLines.Update(label+1, Lw2);
+            }
+        }
+    }
 
 	void AddObjectInfo(int id, cv::Mat tdata){
 
@@ -732,127 +970,15 @@ extern "C" {
     }
 
     void AddContent(int id, float x, float y, float z){
-        cv::Mat pos = (cv::Mat_<float>(3, 1) <<x, y, z);
-		std::unique_lock<std::mutex> lock(mMutexContentInfo);
-		mapContentInfos.insert(std::make_pair(id, pos));
+        //cv::Mat pos = (cv::Mat_<float>(3, 1) <<x, y, z);
+		//std::unique_lock<std::mutex> lock(mMutexContentInfo);
+		//mapContentInfos.insert(std::make_pair(id, pos));
 	}
 
 	void AddContentInfo(int id, float x, float y, float z) {
         POOL->EnqueueJob(AddContent, id, x, y, z);
 	}
 
-
-
-	bool Track(void* data) {
-        //ofile.open(strLogFile.c_str(), std::ios_base::out | std::ios_base::app);
-        //ofile<<"tracking start"<<std::endl;
-		bool bTrack = false;
-		int nMatch = -1;
-		ofile.open(strLogFile.c_str(), std::ios::trunc);
-        ofile<<"Track::start\n";
-        ofile.close();
-        // WriteLog("Track::Start");
-		if (pTracker->mTrackState == EdgeSLAM::TrackingState::NotEstimated || pTracker->mTrackState == EdgeSLAM::TrackingState::Failed) {
-			EdgeSLAM::RefFrame* rf = pMap->GetReferenceFrame();
-
-			if (rf) {
-				//std::vector<cv::Mat> vCurrentDesc = Utils::toDescriptorVector(pCurrFrame->mDescriptors);
-				//pVoc->transform(vCurrentDesc, pCurrFrame->mBowVec, pCurrFrame->mFeatVec, 4);
-				nMatch = pTracker->TrackWithReferenceFrame(rf, pCurrFrame, 100.0, 50.0);
-				bTrack = nMatch >= 10;
-
-				if (bTrack) {
-					pTracker->mnLastRelocFrameId = pCurrFrame->mnFrameID;
-				}
-                //ofile<<"ref matching = "<<nMatch<<" "<<rf->mDescriptors.rows<<" "<<rf->mvpMapPoints.size()<<" "<<rf->N<<"\n";
-			}
-		}
-		if (pTracker->mTrackState == EdgeSLAM::TrackingState::Success) {
-			//predict
-			if(bIMU){
-                cv::Mat Rgyro = cv::Mat(3,3, CV_32FC1,imuAddr);
-                cv::Mat tacc = cv::Mat::zeros(3,1,CV_32FC1);
-                cv::Mat Timu = cv::Mat::eye(4,4,CV_32FC1);
-                Rgyro.copyTo(Timu.rowRange(0,3).colRange(0,3));
-                tacc.copyTo(Timu.rowRange(0,3).col(3));
-                cv::Mat Tprev = pPrevFrame->GetPose();
-                pCurrFrame->SetPose(Timu*Tprev);
-
-			}else
-			    pCurrFrame->SetPose(pMotionModel->predict());
-            WriteLog("predict");
-            {
-                std::stringstream ss;
-                ss<<pMotionModel->predict();
-                WriteLog(ss.str());
-            }
-            {
-                cv::Mat T = pCurrFrame->GetPose();
-                std::stringstream ss;
-                ss<<T<<std::endl;
-                WriteLog(ss.str());
-            }
-			//prev
-
-			nMatch = pTracker->TrackWithPrevFrame(pPrevFrame, pCurrFrame, 100.0, 50.0);
-
-			bTrack = nMatch >= 10;
-			if (!bTrack) {
-				EdgeSLAM::RefFrame* rf = pMap->GetReferenceFrame();
-				if (rf) {
-					//std::vector<cv::Mat> vCurrentDesc = Utils::toDescriptorVector(pCurrFrame->mDescriptors);
-					//pVoc->transform(vCurrentDesc, pCurrFrame->mBowVec, pCurrFrame->mFeatVec, 4);
-					nMatch = pTracker->TrackWithReferenceFrame(rf, pCurrFrame, 100.0, 50.0);
-					bTrack = nMatch >= 10;
-				}
-			}
-		}
-		WriteLog("Track::1");
-		if (bTrack) {
-			//local map
-			//ofile<<"local map matching = start"<<std::endl;
-			EdgeSLAM::LocalMap* pLocal = new EdgeSLAM::LocalMap();
-			//ofile<<"local map matching = 1"<<std::endl;
-			pMap->GetLocalMap(pLocal);
-			WriteLog("Track::1.1");
-			//ofile<<"local map matching = 2 = "<<pLocal->mvpMapPoints.size()<<" "<<pLocal->mvpTrackPoints.size()<<std::endl;
-			nMatch = 4;
-			nMatch = pTracker->TrackWithLocalMap(pCurrFrame, pLocal, 100.0, 50.0);
-            //ofile<<"local map matching = "<<nMatch<<"\n";
-
-            WriteLog("Track::1.2");
-			if (pCurrFrame->mnFrameID < pTracker->mnLastRelocFrameId + 30 && nMatch < 30) {
-				bTrack = false;
-				//bTrack = true;
-			}
-			else if (nMatch < 30) {
-				bTrack = false;
-			}
-			else {
-				bTrack = true;
-			}
-			delete pLocal;
-		}
-		if (bTrack) {
-			pTracker->mTrackState = EdgeSLAM::TrackingState::Success;
-			pMotionModel->update(pCurrFrame->GetPose());
-
-            ////unity에 포즈 정보 갱신함.
-			cv::Mat T = pCurrFrame->GetPose();
-		    cv::Mat P = cv::Mat(4,3, CV_32FC1, data);
-		    T.rowRange(0, 3).colRange(0, 3).copyTo(P.rowRange(0, 3));
-            cv::Mat t = T.col(3).rowRange(0, 3).t();
-            t.copyTo(P.row(3));
-		}
-		else {
-			pTracker->mTrackState = EdgeSLAM::TrackingState::Failed;
-			pMotionModel->reset();
-		}
-		
-        //ofile<<"Tracking="<<t_total<<std::endl;
-        //ofile.close();
-		return bTrack;
-	}
     std::mutex mMutexLogFile;
     void WriteLog(std::string str, std::ios_base::openmode mode){
         //std::string log(data);
@@ -862,129 +988,6 @@ extern "C" {
         ofile.close();
     }
 
-    bool VisualizeFrame(void* data){
-        if (!pCurrFrame)
-			return false;
-        //이미 data는 setframe에서 변경되어서 옴
-        //ofile.open(strLogFile.c_str(), std::ios_base::out | std::ios_base::app);
-        //ofile<<"visualize start"<<std::endl;
-        cv::Mat img = cv::Mat(mnHeight, mnWidth, CV_8UC4, data);
-
-        //(a,r,g,b) = cv ->(rgba)
-        //cv::cvtColor(img, img, cv::COLOR_BGRA2RGBA);
-
-        std::vector<cv::Mat> colors(4);
-		cv::split(img, colors);
-		std::vector<cv::Mat> colors2(4);
-		colors2[0] = colors[3];
-		colors2[1] = colors[0];//2
-		colors2[2] = colors[1];//1
-		colors2[3] = colors[2];//0
-		cv::merge(colors2, img);
-
-        /*
-        cv::Mat obj;
-        {
-            std::unique_lock<std::mutex> lock(mMutexObjectInfo);
-            obj = ObjectInfo.clone();
-        }
-
-        for(int j = 0, jend = obj.rows; j < jend ;j++){
-            cv::Point2f left(obj.at<float>(j, 2), obj.at<float>(j, 3));
-            cv::Point2f right(obj.at<float>(j, 4), obj.at<float>(j, 5));
-            cv::rectangle(img,left, right, cv::Scalar(255, 255, 255, 255));
-        }
-        */
-
-        /*
-        if(pCurrGrid){
-            WriteLog("vis::start");
-
-
-             for(int y = 0, rows = pCurrGrid->mGrid.size(); y < rows; y++){
-                for(int x = 0, cols = pCurrGrid->mGrid[0].size(); x < cols; x++){
-                    auto pCell = pCurrGrid->mGrid[y][x];
-                    if(pCell){
-                        if(pCell->mpObject->GetLabel()>0){
-                            cv::Point2f pt(x*scale,y*scale);
-                            cv::circle(img, pt, 4, SemanticColors[pCell->mpObject->GetLabel()], -1);
-                        }
-                    }
-                }
-            }
-            WriteLog("vis::end");
-        }
-        */
-
-        cv::Mat labeled;
-        {
-            std::unique_lock<std::mutex> lock(mMutexSegmentation);
-            labeled = LabeledImage.clone();
-        }
-        if(labeled.rows > 0)
-            cv::addWeighted(img, 0.7, labeled, 0.3,0.0, img);
-
-        bool res = false;
-		if (pTracker->mTrackState == EdgeSLAM::TrackingState::Success) {
-
-			for (int i = 0; i < pCurrFrame->N; i++) {
-				auto pt = pCurrFrame->mvKeys[i].pt;
-                //pt.y = mnHeight -pt.y;
-                cv::circle(img, pt, 1, cv::Scalar(255, 0, 0, 255), -1);
-				//if (!pCurrFrame->mvpMapPoints[i] || pCurrFrame->mvbOutliers[i])
-				//	continue;
-				//auto pt = pCurrFrame->mvKeys[i].pt;
-				//pt.y = mnHeight -pt.y;
-				//cv::circle(img, pt, 2, cv::Scalar(255, 255, 0, 255), -1);
-			}
-            /*
-            cv::Mat obj;
-            {
-                std::unique_lock<std::mutex> lock(mMutexObjectInfo);
-                obj = ObjectInfo.clone();
-            }
-
-            for(int j = 0, jend = obj.rows; j < jend ;j++){
-                cv::Point2f left(obj.at<float>(j, 2), mnHeight-obj.at<float>(j, 3));
-                cv::Point2f right(obj.at<float>(j, 4), mnHeight-obj.at<float>(j, 5));
-                cv::rectangle(img,left, right, cv::Scalar(255, 255, 255, 255));
-            }
-            */
-            /*
-			std::map<int, cv::Mat> tempInfos;
-			{
-				std::unique_lock<std::mutex> lock(mMutexContentInfo);
-				tempInfos = mapContentInfos;
-			}
-			cv::Mat T = pCurrFrame->GetPose();
-			cv::Mat R = T.colRange(0, 3).rowRange(0, 3);
-			cv::Mat t = T.col(3).rowRange(0, 3);
-			cv::Mat K = pCamera->K.clone();
-			for (auto iter = tempInfos.begin(), iend = tempInfos.end(); iter != iend; iter++) {
-				auto pos = iter->second;
-				cv::Mat temp = K * (R * pos + t);
-				float depth = temp.at<float>(2);
-				if (depth < 0.0)
-					continue;
-				cv::Point2f pt(temp.at<float>(0) / depth, mnHeight-temp.at<float>(1) / depth);
-				cv::circle(img, pt, 3, cv::Scalar(255, 0, 255, 0), -1);
-			}
-			*/
-		}
-		cv::flip(img, img, 0);
-
-		//cv::cvtColor(img, img, cv::COLOR_RGBA2BGRA);
-		//memcpy(data, img.data, sizeof(cv::Vec4b) * img.rows * img.cols);
-
-        /*
-        std::stringstream ss;
-        ss<<strPath<<"/color.jpg";
-        cv::imwrite(ss.str(), img);
-        */
-        //ofile<<"visualize end"<<std::endl;
-        //ofile.close();
-		return true;
-    }
     void SendDevicePose(int id, double ts, cv::Mat T){
         //cv::Mat T = pCurrFrame->GetPose();
         cv::Mat P = cv::Mat::zeros(4,3, CV_32FC1);
@@ -1004,9 +1007,14 @@ extern "C" {
         std::chrono::high_resolution_clock::time_point t2 = std::chrono::high_resolution_clock::now();
         auto d = std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1).count();
         float t = d / 1000.0;
-        testUploadCount[nQuality]++;
-        testUploadTime[nQuality]=testUploadTime[nQuality]+t;
-
+        //testUploadCount[nQuality]++;
+        //testUploadTime[nQuality]=testUploadTime[nQuality]+t;
+        std::stringstream ss;
+        ss<<nQuality;
+        int c = testUploadCount.Get(ss.str())+1;
+        float total = testUploadTime.Get(ss.str())+t;
+        testUploadCount.Update(ss.str(), c);
+        testUploadTime.Update(ss.str(), total);
     }
 
     bool Localization(void* data, int id, double ts, int nQuality, bool bTracking, bool bVisualization){
@@ -1017,7 +1025,6 @@ extern "C" {
         //ofile.close();
         WriteLog("Localization::start");
 
-        cv::Mat gray;
         bool res = true;
 
         //유니티에서 온 프레임
@@ -1028,6 +1035,7 @@ extern "C" {
 
         //NDK에서 이용하는 이미지로 변환
         cv::flip(frame, frame,0);
+        cv::Mat gray;
         cv::cvtColor(frame, gray, cv::COLOR_BGR2GRAY);//COLOR_BGRA2GRAY, COLOR_RGBA2GRAY
 
         if(id % mnSkipFrame == 0)
@@ -1086,6 +1094,11 @@ extern "C" {
                 }else
                     pCurrFrame->SetPose(pMotionModel->predict());
                 WriteLog("Localization::TrackPrev::Start");
+                {
+                    std::stringstream ss;
+                    ss<<pCurrFrame->GetPose();
+                    WriteLog(ss.str());
+                }
                 nMatch = pTracker->TrackWithPrevFrame(pPrevFrame, pCurrFrame, 100.0, 50.0);
                 WriteLog("Localization::TrackPrev::End");
                 bTrack = nMatch >= 10;
@@ -1100,11 +1113,10 @@ extern "C" {
             }
 
             if (bTrack) {
-                EdgeSLAM::LocalMap* pLocal = new EdgeSLAM::LocalMap();
-                pMap->GetLocalMap(pLocal);
+                auto vecLocalMPs = LocalMapPoints.get();
                 nMatch = 4;
                 WriteLog("Localization::TrackLocalMap::Start");
-                nMatch = pTracker->TrackWithLocalMap(pCurrFrame, pLocal, 100.0, 50.0);
+                nMatch = pTracker->TrackWithLocalMap(pCurrFrame, vecLocalMPs, 100.0, 50.0);
                 WriteLog("Localization::TrackLocalMap::End");
                 if (pCurrFrame->mnFrameID < pTracker->mnLastRelocFrameId + 30 && nMatch < 30) {
                     bTrack = false;
@@ -1115,25 +1127,41 @@ extern "C" {
                 else {
                     bTrack = true;
                 }
-                delete pLocal;
             }
             if (bTrack) {
                 pTracker->mTrackState = EdgeSLAM::TrackingState::Success;
                 cv::Mat T = pCurrFrame->GetPose();
+                pCameraPose->SetPose(T);
                 pMotionModel->update(T);
                 POOL->EnqueueJob(SendDevicePose, id, ts, T.clone());
             }
             else {
                 WriteLog("Tracking::Failed", std::ios::trunc);
                 pTracker->mTrackState = EdgeSLAM::TrackingState::Failed;
+                pCameraPose->Init();
                 pMotionModel->reset();
 
             }
 
-
-
         }
 
+        /////라인 프로젝션
+        {
+            cv::Mat R = pCurrFrame->GetRotation();
+            cv::Mat t = pCurrFrame->GetTranslation();
+            auto mapPlaneLineFromWorld = LocalMapPlaneLines.Get();
+            cv::Mat lines = cv::Mat::zeros(3,8,CV_32FC1);
+            for(auto iter = mapPlaneLineFromWorld.begin(), iend = mapPlaneLineFromWorld.end(); iter != iend; iter++){
+                int label = iter->first;
+                cv::Mat Lw = iter->second;
+                cv::Mat line = EdgeSLAM::PlaneProcessor::LineProjection(R, t, Lw, pCurrFrame->Kfluker);
+                if (line.at<float>(0) < 0.0)
+                    line *= -1.0;
+                LocalMapPlaneProjectionLines.Update(label, line);
+                line.copyTo(lines.col(label-2));
+            }
+            LocalMapPlaneProjectionLines.Update(10, lines);
+        }
         //시각화
         if(bVisualization){
 
@@ -1145,6 +1173,42 @@ extern "C" {
             colors2[2] = colors[1];//1
             colors2[3] = colors[2];//0
             cv::merge(colors2, ori_frame);
+
+            if(bTrack){
+
+                ////Content Visualization
+                auto mapContents = LocalMapContents.Get();
+                cv::Mat R = pCurrFrame->GetRotation();
+                cv::Mat t = pCurrFrame->GetTranslation();
+                for(auto iter = mapContents.begin(), iend = mapContents.end(); iter != iend; iter++){
+                    cv::Mat pos = iter->second;
+                    cv::Mat proj = pCamera->K*(R*pos+t);
+                    float depth = proj.at<float>(2);
+                    if(depth < 0.0)
+                        continue;
+                    cv::Point2f pt(proj.at<float>(0)/depth, mnHeight-proj.at<float>(1)/depth);
+                    cv::circle(ori_frame, pt, 3, cv::Scalar(255,0,255,255), -1);
+                }
+
+                auto mapPlaneLine = LocalMapPlaneProjectionLines.Get();
+                for(auto iter = mapPlaneLine.begin(), iend = mapPlaneLine.end(); iter != iend; iter++){
+                    int label = iter->first;
+                    cv::Mat line = iter->second;
+                    auto pt11 = EdgeSLAM::PlaneProcessor::GetLinePoint(0.0, line);
+                    pt11.y = mnHeight-pt11.y;
+                    auto pt12 = EdgeSLAM::PlaneProcessor::GetLinePoint(mnWidth, line);
+                    pt12.y = mnHeight-pt12.y;
+                    cv::line(ori_frame, pt11, pt12,cv::Scalar(255,255,0,0),2);
+                    /*
+                    if(label == 1){
+
+                    }else if(label == 2){
+                        cv::line(ori_frame, pt11, pt12,cv::Scalar(255,0,0,255),2);
+                    }
+                    */
+                }
+            }
+
 
             //VisualizeObjectFlow(ori_frame, id);
 

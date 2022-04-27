@@ -16,17 +16,18 @@ namespace EdgeSLAM {
 	class Frame {
 	public:
 		Frame();
-		Frame(cv::Mat img, Camera* pCam, int id, double time_stamp = 0.0);
-		Frame(void* data, Camera* pCam, int id, double time_stamp = 0.0);
-		Frame(Color* data, Camera* pCam, int id, double time_stamp = 0.0);
-		Frame(Color32* data, Camera* pCam, int id, double time_stamp = 0.0);
+		Frame(const cv::Mat& img, Camera* pCam, int id, double time_stamp = 0.0);
+		//Frame(void* data, Camera* pCam, int id, double time_stamp = 0.0);
+		//Frame(Color* data, Camera* pCam, int id, double time_stamp = 0.0);
+		//Frame(Color32* data, Camera* pCam, int id, double time_stamp = 0.0);
+
 		virtual ~Frame();
 
 		void reset_map_points();
 		bool is_in_frustum(MapPoint* pMP, float viewingCosLimit);
 
 		int N;
-		cv::Mat K, D;
+		cv::Mat K, D, Kfluker;
 		float fx, fy, cx, cy, invfx, invfy;
 		bool mbDistorted;
 		int FRAME_GRID_COLS;
@@ -70,12 +71,15 @@ namespace EdgeSLAM {
 		bool PosInGrid(const cv::KeyPoint &kp, int &posX, int &posY);
 	public:
 		CameraPose* mpCamPose;
-		void SetPose(const cv::Mat &Tcw);
+		void SetPose(cv::Mat T);
 		cv::Mat GetPose();
 		cv::Mat GetPoseInverse();
 		cv::Mat GetCameraCenter();
 		cv::Mat GetRotation();
 		cv::Mat GetTranslation();
+    private:
+        std::mutex mMutexPose;
+        cv::Mat Tcw, Rcw, tcw, Ow;
 
 	};
 }

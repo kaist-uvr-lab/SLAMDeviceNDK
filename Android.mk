@@ -8,7 +8,6 @@ LOCAL_SRC_FILES :=	$(LOCAL_PATH)/SLAM/UnityLibrary.cpp\
 	$(LOCAL_PATH)/SLAM/Camera.cpp\
 	$(LOCAL_PATH)/SLAM/CameraPose.cpp\
 	$(LOCAL_PATH)/SLAM/Frame.cpp\
-	$(LOCAL_PATH)/SLAM/LocalMap.cpp\
 	$(LOCAL_PATH)/SLAM/Map.cpp\
 	$(LOCAL_PATH)/SLAM/MapPoint.cpp\
 	$(LOCAL_PATH)/SLAM/MotionModel.cpp\
@@ -18,6 +17,7 @@ LOCAL_SRC_FILES :=	$(LOCAL_PATH)/SLAM/UnityLibrary.cpp\
 	$(LOCAL_PATH)/SLAM/RefFrame.cpp\
 	$(LOCAL_PATH)/SLAM/SearchPoints.cpp\
 	$(LOCAL_PATH)/SLAM/Tracker.cpp\
+	$(LOCAL_PATH)/SLAM/PlaneProcessor.cpp\
 	$(LOCAL_PATH)/SLAM/GridCell.cpp\
 	$(LOCAL_PATH)/SLAM/GridFrame.cpp\
 	$(LOCAL_PATH)/SLAM/happyhttp.cpp\

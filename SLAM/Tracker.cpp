@@ -2,7 +2,7 @@
 #include "Frame.h"
 #include "RefFrame.h"
 #include "MapPoint.h"
-#include "LocalMap.h"
+
 #include "SearchPoints.h"
 #include "ORBDetector.h"
 #include "Optimizer.h"
@@ -55,14 +55,14 @@ namespace EdgeSLAM {
 		int nopt = EdgeSLAM::Optimizer::PoseOptimization(cur);
 		return nopt;
 	}
-	int Tracker::TrackWithLocalMap(Frame* cur, LocalMap* pLocal, float thMaxDesc, float thMinDesc) {
-        int nMatch = UpdateVisiblePoints(cur, pLocal->mvpMapPoints);
+	int Tracker::TrackWithLocalMap(Frame* cur, std::vector<MapPoint*> vpLocalMPs, float thMaxDesc, float thMinDesc) {
+        int nMatch = UpdateVisiblePoints(cur, vpLocalMPs);
 		if (nMatch == 0)
 			return 0;
         float thRadius = 1.0;
 		if (cur->mnFrameID < mnLastRelocFrameId + 2)
 			thRadius = 5.0;
-		int a = SearchPoints::SearchMapByProjection(cur, pLocal->mvpMapPoints, thMaxDesc, thMinDesc, thRadius);
+		int a = SearchPoints::SearchMapByProjection(cur, vpLocalMPs, thMaxDesc, thMinDesc, thRadius);
 		//std::ofstream ofile;
         //ofile.open(path.c_str(), std::ios_base::out | std::ios_base::app);
         //ofile<<"Track::LocalMap::Optimize:Start"<<std::endl;

@@ -12,24 +12,14 @@ namespace EdgeSLAM {
 	class RefFrame;
 	class MapPoint;
 
-	class LocalMap;
 	class Map {
 	public:
 		Map();
 		virtual ~Map();
     public:
-
-        ConcurrentMap<int, MapPoint*> mapMapPoints;
-    public:
-        void SetLocalMap(LocalMap* pLocal);
-        void GetLocalMap(LocalMap* pLocal);
-    private:
-        std::mutex mMutexLocalMap;
-        LocalMap* mpLocalMap;
-	public:
+        ConcurrentMap<int, MapPoint*> MapPoints;
 		void SetReferenceFrame(RefFrame* pRef);
 		RefFrame* GetReferenceFrame();
-
 	private:
 		std::mutex mMutexRefFrame;
 		RefFrame* mpRefFrame;

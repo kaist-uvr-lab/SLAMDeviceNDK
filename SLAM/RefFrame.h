@@ -76,14 +76,13 @@ namespace EdgeSLAM {
 		std::mutex mMutexFeatures;
 	public:
 		CameraPose* mpCamPose;
-		void SetPose(const cv::Mat &Tcw);
+		void SetPose(cv::Mat Tcw);
 		cv::Mat GetPose();
 		cv::Mat GetPoseInverse();
 		cv::Mat GetCameraCenter();
 		cv::Mat GetRotation();
 		cv::Mat GetTranslation();
-    public:
-        std::string logfile;
+
 	};
 }
 #endif

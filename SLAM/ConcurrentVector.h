@@ -14,8 +14,8 @@ private:
 	std::vector<T> mVector;
 public:
 	void Initialize(int N, T data);
-	void Set(std::vector<T> src);
-	void Set(ConcurrentVector<T> vec);
+	void set(std::vector<T> src);
+	void set(ConcurrentVector<T> vec);
 	std::vector<T> get();
 	T get(int idx);
 	void push_back(T data);
@@ -37,14 +37,14 @@ void ConcurrentVector<T>::Initialize(int N, T data) {
 }
 
 template <class T>
-void ConcurrentVector<T>::Set(std::vector<T> src) {
+void ConcurrentVector<T>::set(std::vector<T> src) {
 	auto vec = std::vector<T>(src.begin(), src.end());
 	std::unique_lock<std::mutex> lock(mMutex);
 	mVector = vec;
 }
 
 template <class T>
-void ConcurrentVector<T>::Set(ConcurrentVector<T> vec) {
+void ConcurrentVector<T>::set(ConcurrentVector<T> vec) {
 	std::vector<T> src = vec->get();
 	std::unique_lock<std::mutex> lock(mMutex);
 	mVector = std::vector<T>(src.begin(), src.end());
