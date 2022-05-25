@@ -39,6 +39,7 @@ extern "C" {
     std::string strSource;
     std::vector<int> param = std::vector<int>(2);
 
+    ConcurrentMap<int, cv::Mat> TouchScreenImage; //가상 객체, 물체 위치 등을 체크하기 위한 것
     ConcurrentMap<int, cv::Mat> LocalMapContents;
     ConcurrentMap<int, cv::Mat> LocalMapPlanes; //floor, ceil
     ConcurrentMap<int, cv::Mat> LocalMapWallPlanes; //wall
@@ -238,6 +239,8 @@ extern "C" {
         for(int i = 0; i < tempRefFrames.size(); i++)
             delete tempRefFrames[i];
         */
+        TouchScreenImage.Release();
+        LocalMapContents.Release();
         LocalMapPoints.Release();
         dequeRefFrames.Release();
         mapSendedImages.Release();
@@ -470,138 +473,182 @@ extern "C" {
         Parsing(id, key, temp, bTracking);
 
     }
-    void TouchProcess(int id, float x, float y, double ts){
-        std::stringstream ss;
-		ss <<"/Store?keyword="<<"ContentGeneration"<<"&id="<<id<<"&src="<<strSource<<"&ts="<<std::fixed<<std::setprecision(6)<<ts;
-		//std::chrono::high_resolution_clock::time_point s1 = std::chrono::high_resolution_clock::now();
-		WebAPI api("143.248.6.143", 35005);
-		float data[1000] = {0.0,};
-        data[0] = x;
-        data[1] = y;
-        cv::Mat x3D = cv::Mat::ones(1,3,CV_32FC1);
-        x3D.at<float>(0) = x;
-        x3D.at<float>(1) = y;
+    void TouchProcess(int id, int phase, float x, float y, double ts){
 
-        cv::Mat R, t;
-        pCameraPose->GetPose(R,t);
+        ////오브젝트 체크
 
-        cv::Mat Xw = pCamera->Kinv * x3D.t();
-        Xw.push_back(cv::Mat::ones(1,1,CV_32FC1)); //3x1->4x1
-        Xw = pCameraPose->GetInversePose()*Xw; // 4x4 x 4 x 1
-        float testaaasdf = Xw.at<float>(3);
-        Xw = Xw.rowRange(0,3)/Xw.at<float>(3); // 4x1 -> 3x1
-        cv::Mat Ow = pCameraPose->GetCenter(); // 3x1
-        cv::Mat dir = Xw-Ow; //3x1
+        ////가상 객체 선택
 
-        auto planes = LocalMapPlanes.Get();
-        float min_val = 10000.0;
-        cv::Mat min_param;
-        for(auto iter = planes.begin(), iend = planes.end(); iter != iend; iter++){
-            cv::Mat param = iter->second; //4x1
-            cv::Mat normal = param.rowRange(0,3); //3x1
-            float dist = param.at<float>(3);
-            float a = normal.dot(-dir);
-            if(std::abs(a) < 0.000001)
-                continue;
-            float u = (normal.dot(Ow)+dist)/a;
-            if(u > 0.0 && u < min_val){
-                min_val = u;
-                min_param = param;
+        ////가상 객체 등록
+
+        if(!TouchScreenImage.Count(0)){
+            return;
+        }
+        cv::Mat touchImg = TouchScreenImage.Get(0);
+        cv::Vec2i val = touchImg.at<cv::Vec2i>(y,x);
+        if(val.val[0] == 0){
+            std::stringstream ss;
+            ss <<"/Store?keyword="<<"ContentGeneration"<<"&id="<<id<<"&src="<<strSource<<"&ts="<<std::fixed<<std::setprecision(6)<<ts;
+            //std::chrono::high_resolution_clock::time_point s1 = std::chrono::high_resolution_clock::now();
+            WebAPI api("143.248.6.143", 35005);
+            float data[1000] = {0.0,};
+            data[0] = x;
+            data[1] = y;
+            cv::Mat x3D = cv::Mat::ones(1,3,CV_32FC1);
+            x3D.at<float>(0) = x;
+            x3D.at<float>(1) = y;
+
+            cv::Mat R, t;
+            pCameraPose->GetPose(R,t);
+
+            cv::Mat Xw = pCamera->Kinv * x3D.t();
+            Xw.push_back(cv::Mat::ones(1,1,CV_32FC1)); //3x1->4x1
+            Xw = pCameraPose->GetInversePose()*Xw; // 4x4 x 4 x 1
+            float testaaasdf = Xw.at<float>(3);
+            Xw = Xw.rowRange(0,3)/Xw.at<float>(3); // 4x1 -> 3x1
+            cv::Mat Ow = pCameraPose->GetCenter(); // 3x1
+            cv::Mat dir = Xw-Ow; //3x1
+
+            auto planes = LocalMapPlanes.Get();
+            float min_val = 10000.0;
+            cv::Mat min_param;
+            for(auto iter = planes.begin(), iend = planes.end(); iter != iend; iter++){
+                cv::Mat param = iter->second; //4x1
+                cv::Mat normal = param.rowRange(0,3); //3x1
+                float dist = param.at<float>(3);
+                float a = normal.dot(-dir);
+                if(std::abs(a) < 0.000001)
+                    continue;
+                float u = (normal.dot(Ow)+dist)/a;
+                if(u > 0.0 && u < min_val){
+                    min_val = u;
+                    min_param = param;
+                }
             }
-        }
-        if(min_val < 10000.0){
-            //복원
-            cv::Mat res =  Ow+dir*min_val;
-            data[2] = res.at<float>(0);
-            data[3] = res.at<float>(1);
-            data[4] = res.at<float>(2);
-            data[5] = testaaasdf;
-            data[6] = min_val;
-        }
+            data[5] = planes.size();
+            if(min_val < 10000.0){
+                //복원
+                cv::Mat res =  Ow+dir*min_val;
+                data[2] = res.at<float>(0);
+                data[3] = res.at<float>(1);
+                data[4] = res.at<float>(2);
+                data[5] = testaaasdf;
+                data[6] = min_val;
+            }
 
-        auto mapPlaneLine = LocalMapPlaneProjectionLines.Get();
-        if(mapPlaneLine.count(10)){
-            cv::Mat lines = mapPlaneLine[10];
+            ////추후 수정 필요
+            /*
+            auto mapPlaneLine = LocalMapPlaneProjectionLines.Get();
+            if(mapPlaneLine.count(10)){
+                cv::Mat lines = mapPlaneLine[10];
+                cv::Mat resa = x3D*lines;
+                for(int i = 0; i < 8; i++){
+                    float val = 0.0;
+                    if(resa.at<float>(i) > 0)
+                        val = 1.0;
+                    if(resa.at<float>(i) < 0)
+                        val = -1.0;
+                    resa.at<float>(i) = val;
+                    //data[i+5] = val;
+                }
+                //floor
+                int id = -1;
+                if(resa.at<float>(0) == 1 && resa.at<float>(2) == -1){
+                    id = 0;
+                }
+                //ceil
+                else if(resa.at<float>(1) == 1 && resa.at<float>(3) == -1){
+                    id = 1;
+                }
+                if(id >= 0){
+                    cv::Mat p = LocalMapPlanes.Get(id);
+                    cv::Mat Tinv = pCameraPose->GetInversePose();
+                    cv::Mat Pinv = EdgeSLAM::PlaneProcessor::CalcInverPlaneParam(p, Tinv);
+                    cv::Mat Xnorm = pCamera->Kinv*x3D.t();
+                    float depth = EdgeSLAM::PlaneProcessor::CalculateDepth(Xnorm, Pinv);
+                    cv::Mat Xw = EdgeSLAM::PlaneProcessor::CreateWorldPoint(Xnorm, Tinv, depth);
+                    //data[2] = Xw.at<float>(0);
+                    //data[3] = Xw.at<float>(1);
+                    //data[4] = Xw.at<float>(2);
+                }
+
+                std::chrono::high_resolution_clock::time_point t1 = std::chrono::high_resolution_clock::now();
+                //StoreData("Image", id, strSource, ts, buffer.data(), buffer.size());
+                auto res = api.Send(ss.str(), (const unsigned char*)data, sizeof(float)*1000);
+                std::chrono::high_resolution_clock::time_point t2 = std::chrono::high_resolution_clock::now();
+                auto d = std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1).count();
+                float t = d / 1000.0;
+                int c = testUploadCount.Get("ContentGeneration")+1;
+                float total = testUploadTime.Get("ContentGeneration")+t;
+                testUploadCount.Update("ContentGeneration", c);
+                testUploadTime.Update("ContentGeneration", total);
+
+            }
+            */
+            ////추후 수정 필요
+            if(true){
+                data[6] = min_val;
+
+                std::chrono::high_resolution_clock::time_point t1 = std::chrono::high_resolution_clock::now();
+                //StoreData("Image", id, strSource, ts, buffer.data(), buffer.size());
+                auto res = api.Send(ss.str(), (const unsigned char*)data, sizeof(float)*1000);
+                std::chrono::high_resolution_clock::time_point t2 = std::chrono::high_resolution_clock::now();
+                auto d = std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1).count();
+                float t = d / 1000.0;
+                int c = testUploadCount.Get("ContentGeneration")+1;
+                float total = testUploadTime.Get("ContentGeneration")+t;
+                testUploadCount.Update("ContentGeneration", c);
+                testUploadTime.Update("ContentGeneration", total);
+
+            }
+            /*
+            cv::Mat lines = cv::Mat::zeros(3,8,CV_32FC1);
+            for(auto iter = mapPlaneLine.begin(), iend = mapPlaneLine.end(); iter != iend; iter++){
+                int label = iter->first-2;
+                cv::Mat Lw = iter->second;
+                cv::Mat line = EdgeSLAM::PlaneProcessor::LineProjection(R, t, Lw, pCamera->Kfluker);
+                {
+                std::stringstream ss;
+                ss<<label<<" "<<line.t()<<std::endl;
+                WriteLog(ss.str());
+                }
+                //line.copyTo(lines.colRange(label, label+1));
+                line.copyTo(lines.col(label));
+            }
+            {
+            std::stringstream ss;
+            ss<<lines<<std::endl;
+            WriteLog(ss.str());
+            }
+            WriteLog("touch3???");
             cv::Mat resa = x3D*lines;
             for(int i = 0; i < 8; i++){
                 float val = 0.0;
                 if(resa.at<float>(i) > 0)
                     val = 1.0;
-                if(resa.at<float>(i) < 0)
+                if(resa.at<float>(i) <>> 0)
                     val = -1.0;
-                resa.at<float>(i) = val;
-                //data[i+5] = val;
+                data[i+2] = val;
             }
-            //floor
-            int id = -1;
-            if(resa.at<float>(0) == 1 && resa.at<float>(2) == -1){
-                id = 0;
-            }
-            //ceil
-            else if(resa.at<float>(1) == 1 && resa.at<float>(3) == -1){
-                id = 1;
-            }
-            if(id >= 0){
-                cv::Mat p = LocalMapPlanes.Get(id);
-                cv::Mat Tinv = pCameraPose->GetInversePose();
-                cv::Mat Pinv = EdgeSLAM::PlaneProcessor::CalcInverPlaneParam(p, Tinv);
-                cv::Mat Xnorm = pCamera->Kinv*x3D.t();
-                float depth = EdgeSLAM::PlaneProcessor::CalculateDepth(Xnorm, Pinv);
-                cv::Mat Xw = EdgeSLAM::PlaneProcessor::CreateWorldPoint(Xnorm, Tinv, depth);
-                //data[2] = Xw.at<float>(0);
-                //data[3] = Xw.at<float>(1);
-                //data[4] = Xw.at<float>(2);
-            }
-
-            std::chrono::high_resolution_clock::time_point t1 = std::chrono::high_resolution_clock::now();
-            //StoreData("Image", id, strSource, ts, buffer.data(), buffer.size());
-            auto res = api.Send(ss.str(), (const unsigned char*)data, sizeof(float)*1000);
-            std::chrono::high_resolution_clock::time_point t2 = std::chrono::high_resolution_clock::now();
-            auto d = std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1).count();
-            float t = d / 1000.0;
-            int c = testUploadCount.Get("ContentGeneration")+1;
-            float total = testUploadTime.Get("ContentGeneration")+t;
-            testUploadCount.Update("ContentGeneration", c);
-            testUploadTime.Update("ContentGeneration", total);
-
-        }
-        /*
-        cv::Mat lines = cv::Mat::zeros(3,8,CV_32FC1);
-        for(auto iter = mapPlaneLine.begin(), iend = mapPlaneLine.end(); iter != iend; iter++){
-            int label = iter->first-2;
-            cv::Mat Lw = iter->second;
-            cv::Mat line = EdgeSLAM::PlaneProcessor::LineProjection(R, t, Lw, pCamera->Kfluker);
-            {
+            */
+            //data[2] = resa.at<float>(0);
+            //data[3] = resa.at<float>(1);
+        }else if(val.val[0] == 2){
+            int cid = val.val[1];
             std::stringstream ss;
-            ss<<label<<" "<<line.t()<<std::endl;
-            WriteLog(ss.str());
-            }
-            //line.copyTo(lines.colRange(label, label+1));
-            line.copyTo(lines.col(label));
+            ss <<"/Store?keyword="<<"VO.SELECTION"<<"&id="<<cid<<"&src="<<strSource<<"&ts="<<std::fixed<<std::setprecision(6)<<ts;
+            //std::chrono::high_resolution_clock::time_point s1 = std::chrono::high_resolution_clock::now();
+            WebAPI api("143.248.6.143", 35005);
+            float data[1000] = {0.0,};
+            api.Send(ss.str(), (const unsigned char*)data, sizeof(float)*1000);
         }
-        {
-        std::stringstream ss;
-        ss<<lines<<std::endl;
-        WriteLog(ss.str());
-        }
-        WriteLog("touch3???");
-        cv::Mat resa = x3D*lines;
-        for(int i = 0; i < 8; i++){
-            float val = 0.0;
-            if(resa.at<float>(i) > 0)
-                val = 1.0;
-            if(resa.at<float>(i) <>> 0)
-                val = -1.0;
-            data[i+2] = val;
-        }
-        */
-        //data[2] = resa.at<float>(0);
-        //data[3] = resa.at<float>(1);
+
+
 
 
     }
-    void TouchProcessInit(int touchID, float x, float y, double ts){
-        POOL->EnqueueJob(TouchProcess, touchID, x, y, ts);
+    void TouchProcessInit(int touchID, int touchPhase, float x, float y, double ts){
+        POOL->EnqueueJob(TouchProcess, touchID, touchPhase, x, y, ts);
     }
 
     void TestUploaddata(char* data, int datalen, int id, char* ckey, int clen1, char* csrc, int clen2, double ts){
@@ -1017,7 +1064,7 @@ extern "C" {
         testUploadTime.Update(ss.str(), total);
     }
 
-    bool Localization(void* data, int id, double ts, int nQuality, bool bTracking, bool bVisualization){
+    bool Localization(void* texdata, void* posedata, int id, double ts, int nQuality, bool bTracking, bool bVisualization){
 
         std::chrono::high_resolution_clock::time_point t1 = std::chrono::high_resolution_clock::now();
         //ofile.open(strLogFile.c_str(), std::ios::trunc);
@@ -1028,7 +1075,7 @@ extern "C" {
         bool res = true;
 
         //유니티에서 온 프레임
-        cv::Mat ori_frame = cv::Mat(mnHeight, mnWidth, CV_8UC4, data);
+        cv::Mat ori_frame = cv::Mat(mnHeight, mnWidth, CV_8UC4, texdata);
         cv::Mat frame = ori_frame.clone();
         cv::cvtColor(frame, frame, cv::COLOR_BGRA2RGB);
         frame.convertTo(frame, CV_8UC3);
@@ -1134,6 +1181,14 @@ extern "C" {
                 pCameraPose->SetPose(T);
                 pMotionModel->update(T);
                 POOL->EnqueueJob(SendDevicePose, id, ts, T.clone());
+
+                ////유니티에 카메라 포즈 복사
+                ////R과 카메라 센터
+                //cv::Mat t = T.col(3).rowRange(0, 3).t();
+                cv::Mat P = cv::Mat(4,3, CV_32FC1, posedata);
+                T.rowRange(0, 3).colRange(0, 3).copyTo(P.rowRange(0, 3));
+                cv::Mat Ow = pCameraPose->GetCenter().t();
+                Ow.copyTo(P.row(3));
             }
             else {
                 WriteLog("Tracking::Failed", std::ios::trunc);
@@ -1175,6 +1230,13 @@ extern "C" {
             cv::merge(colors2, ori_frame);
 
             if(bTrack){
+                cv::Mat touchImg;// = cv::Mat::zeros(mnHeight,mnWidth,CV_32SC2);
+                std::vector<cv::Mat> touchInfo(2);
+                touchInfo[0] = cv::Mat::zeros(mnHeight,mnWidth,CV_32SC1);
+                touchInfo[1] = cv::Mat::zeros(mnHeight,mnWidth,CV_32SC1);
+                ////오브젝트 위치도 기록하기
+
+                ////오브젝트 위치도 기록하기
 
                 ////Content Visualization
                 auto mapContents = LocalMapContents.Get();
@@ -1188,7 +1250,15 @@ extern "C" {
                         continue;
                     cv::Point2f pt(proj.at<float>(0)/depth, mnHeight-proj.at<float>(1)/depth);
                     cv::circle(ori_frame, pt, 3, cv::Scalar(255,0,255,255), -1);
+                    cv::circle(ori_frame, pt, 20, cv::Scalar(255,0,255,255), 1);
+
+                    int cid = iter->first;
+                    cv::circle(touchInfo[0], pt, 20, cv::Scalar(2),-1);
+                    cv::circle(touchInfo[1], pt, 20, cv::Scalar(cid),-1);
                 }
+                cv::merge(touchInfo, touchImg);
+                TouchScreenImage.Update(0,touchImg);
+                ////Content Visualization
 
                 auto mapPlaneLine = LocalMapPlaneProjectionLines.Get();
                 for(auto iter = mapPlaneLine.begin(), iend = mapPlaneLine.end(); iter != iend; iter++){

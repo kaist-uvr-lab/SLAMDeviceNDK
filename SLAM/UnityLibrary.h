@@ -26,12 +26,12 @@ extern "C" {
     void SemanticColorInit();
     void Segmentation(int id);
 
-    void TouchProcessInit(int touchID, float x, float y, double ts);
+    void TouchProcessInit(int touchID, int touchPhase, float x, float y, double ts);
     void WriteLog(std::string str, std::ios_base::openmode mode = std::ios_base::out | std::ios_base::app);
 
     void TestUploaddata(char* data, int datalen, int id, char* ckey, int clen1, char* csrc, int clen2, double ts);
     void TestDownloaddata(int id, char* ckey, int clen1, char* csrc, int clen2, bool bTracking);
 
 
-    bool Localization(void* data, int id, double ts, int nQuality, bool bTracking, bool bVisualization);
+    bool Localization(void* data, void* posedata, int id, double ts, int nQuality, bool bTracking, bool bVisualization);
 }

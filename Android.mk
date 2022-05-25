@@ -21,6 +21,7 @@ LOCAL_SRC_FILES :=	$(LOCAL_PATH)/SLAM/UnityLibrary.cpp\
 	$(LOCAL_PATH)/SLAM/GridCell.cpp\
 	$(LOCAL_PATH)/SLAM/GridFrame.cpp\
 	$(LOCAL_PATH)/SLAM/happyhttp.cpp\
+	$(LOCAL_PATH)/SLAM/VirtualObjectProcessor.cpp\
 	$(LOCAL_PATH)/SLAM/WebAPI.cpp
 
 LOCAL_SHARED_LIBRARIES := g2o dbow3 opencv_java3
