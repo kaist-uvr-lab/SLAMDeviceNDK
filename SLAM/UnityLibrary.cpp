@@ -12,6 +12,7 @@
 #include "CameraPose.h"
 #include "MotionModel.h"
 #include "PlaneProcessor.h"
+#include "VirtualObjectProcessor.h"
 #include "GridCell.h"
 #include "GridFrame.h"
 
@@ -58,6 +59,7 @@ extern "C" {
 	EdgeSLAM::CameraPose* pCameraPose;
 	EdgeSLAM::Tracker* pTracker;
 	EdgeSLAM::Map* pMap;
+	EdgeSLAM::VirtualObjectProcessor* pVOProcessor= nullptr;
     ThreadPool::ThreadPool* POOL = nullptr;
 
 	//std::map<int, EdgeSLAM::MapPoint*> EdgeSLAM::RefFrame::MapPoints;
@@ -228,6 +230,10 @@ extern "C" {
             delete pTracker;
         pTracker = nullptr;
 
+        if(pVOProcessor)
+            delete pVOProcessor;
+        pVOProcessor = nullptr;
+
         if(pMap)
             delete pMap;
         pMap = nullptr;
@@ -290,6 +296,8 @@ extern "C" {
         pTracker = new EdgeSLAM::Tracker();
 
         pMap = new EdgeSLAM::Map();
+
+        pVOProcessor = new EdgeSLAM::VirtualObjectProcessor();
 
         EdgeSLAM::RefFrame::nId = 0;
         pCameraPose = new EdgeSLAM::CameraPose();
@@ -424,17 +432,28 @@ extern "C" {
         WriteLog(ss.str());
 
     }
-
+    bool bResReference = false;
     void Parsing(int id, std::string key, const cv::Mat& data, bool bTracking){
         if(key == "ReferenceFrame"){
             if(bTracking)
                 CreateReferenceFrame(id, data);
+            else{
+                float* tdata = (float*)data.data;
+                int N = (int)tdata[0];
+                if( N > 30){
+                    bResReference = true;
+                }else{
+                    bResReference = false;
+                }
+            }
         }else if(key == "ObjectDetection"){
             AddObjectInfo(id, data);
         }else if(key == "PlaneLine"){
             UpdateLocalMapPlane(data);
         }else if(key == "LocalContent"){
             UpdateLocalMapContent(data);
+        }else if(key == "VO.MOVE"){
+            MovingObjectSync(data);
         }
     }
 
@@ -473,6 +492,52 @@ extern "C" {
         Parsing(id, key, temp, bTracking);
 
     }
+
+    bool CreateWorldPosition(float x, float y, cv::Mat& _pos){
+        cv::Mat x3D = cv::Mat::ones(1,3,CV_32FC1);
+        x3D.at<float>(0) = x;
+        x3D.at<float>(1) = y;
+
+        cv::Mat R, t;
+        pCameraPose->GetPose(R,t);
+
+        cv::Mat Xw = pCamera->Kinv * x3D.t();
+        Xw.push_back(cv::Mat::ones(1,1,CV_32FC1)); //3x1->4x1
+        Xw = pCameraPose->GetInversePose()*Xw; // 4x4 x 4 x 1
+        float testaaasdf = Xw.at<float>(3);
+        Xw = Xw.rowRange(0,3)/Xw.at<float>(3); // 4x1 -> 3x1
+        cv::Mat Ow = pCameraPose->GetCenter(); // 3x1
+        cv::Mat dir = Xw-Ow; //3x1
+
+        bool bres = false;
+        auto planes = LocalMapPlanes.Get();
+        float min_val = 10000.0;
+        cv::Mat min_param;
+        for(auto iter = planes.begin(), iend = planes.end(); iter != iend; iter++){
+            cv::Mat param = iter->second; //4x1
+            cv::Mat normal = param.rowRange(0,3); //3x1
+            float dist = param.at<float>(3);
+            float a = normal.dot(-dir);
+            if(std::abs(a) < 0.000001)
+                continue;
+            float u = (normal.dot(Ow)+dist)/a;
+            if(u > 0.0 && u < min_val){
+                min_val = u;
+                min_param = param;
+            }
+
+        }
+        if(min_val < 10000.0){
+            _pos =  Ow+dir*min_val;
+            bres = true;
+        }
+        return bres;
+    }
+
+    enum class TouchRegionState {
+        None, RealObject, VirtualObject
+    };
+
     void TouchProcess(int id, int phase, float x, float y, double ts){
 
         ////오브젝트 체크
@@ -481,170 +546,87 @@ extern "C" {
 
         ////가상 객체 등록
 
+        //0=시작, 1=움직임, 2=끝
         if(!TouchScreenImage.Count(0)){
             return;
         }
+
         cv::Mat touchImg = TouchScreenImage.Get(0);
         cv::Vec2i val = touchImg.at<cv::Vec2i>(y,x);
+
+        TouchRegionState touchRegionState = TouchRegionState::None;
         if(val.val[0] == 0){
-            std::stringstream ss;
-            ss <<"/Store?keyword="<<"ContentGeneration"<<"&id="<<id<<"&src="<<strSource<<"&ts="<<std::fixed<<std::setprecision(6)<<ts;
-            //std::chrono::high_resolution_clock::time_point s1 = std::chrono::high_resolution_clock::now();
-            WebAPI api("143.248.6.143", 35005);
-            float data[1000] = {0.0,};
-            data[0] = x;
-            data[1] = y;
-            cv::Mat x3D = cv::Mat::ones(1,3,CV_32FC1);
-            x3D.at<float>(0) = x;
-            x3D.at<float>(1) = y;
+            //평면 선택
 
-            cv::Mat R, t;
-            pCameraPose->GetPose(R,t);
-
-            cv::Mat Xw = pCamera->Kinv * x3D.t();
-            Xw.push_back(cv::Mat::ones(1,1,CV_32FC1)); //3x1->4x1
-            Xw = pCameraPose->GetInversePose()*Xw; // 4x4 x 4 x 1
-            float testaaasdf = Xw.at<float>(3);
-            Xw = Xw.rowRange(0,3)/Xw.at<float>(3); // 4x1 -> 3x1
-            cv::Mat Ow = pCameraPose->GetCenter(); // 3x1
-            cv::Mat dir = Xw-Ow; //3x1
-
-            auto planes = LocalMapPlanes.Get();
-            float min_val = 10000.0;
-            cv::Mat min_param;
-            for(auto iter = planes.begin(), iend = planes.end(); iter != iend; iter++){
-                cv::Mat param = iter->second; //4x1
-                cv::Mat normal = param.rowRange(0,3); //3x1
-                float dist = param.at<float>(3);
-                float a = normal.dot(-dir);
-                if(std::abs(a) < 0.000001)
-                    continue;
-                float u = (normal.dot(Ow)+dist)/a;
-                if(u > 0.0 && u < min_val){
-                    min_val = u;
-                    min_param = param;
-                }
-            }
-            data[5] = planes.size();
-            if(min_val < 10000.0){
-                //복원
-                cv::Mat res =  Ow+dir*min_val;
-                data[2] = res.at<float>(0);
-                data[3] = res.at<float>(1);
-                data[4] = res.at<float>(2);
-                data[5] = testaaasdf;
-                data[6] = min_val;
-            }
-
-            ////추후 수정 필요
-            /*
-            auto mapPlaneLine = LocalMapPlaneProjectionLines.Get();
-            if(mapPlaneLine.count(10)){
-                cv::Mat lines = mapPlaneLine[10];
-                cv::Mat resa = x3D*lines;
-                for(int i = 0; i < 8; i++){
-                    float val = 0.0;
-                    if(resa.at<float>(i) > 0)
-                        val = 1.0;
-                    if(resa.at<float>(i) < 0)
-                        val = -1.0;
-                    resa.at<float>(i) = val;
-                    //data[i+5] = val;
-                }
-                //floor
-                int id = -1;
-                if(resa.at<float>(0) == 1 && resa.at<float>(2) == -1){
-                    id = 0;
-                }
-                //ceil
-                else if(resa.at<float>(1) == 1 && resa.at<float>(3) == -1){
-                    id = 1;
-                }
-                if(id >= 0){
-                    cv::Mat p = LocalMapPlanes.Get(id);
-                    cv::Mat Tinv = pCameraPose->GetInversePose();
-                    cv::Mat Pinv = EdgeSLAM::PlaneProcessor::CalcInverPlaneParam(p, Tinv);
-                    cv::Mat Xnorm = pCamera->Kinv*x3D.t();
-                    float depth = EdgeSLAM::PlaneProcessor::CalculateDepth(Xnorm, Pinv);
-                    cv::Mat Xw = EdgeSLAM::PlaneProcessor::CreateWorldPoint(Xnorm, Tinv, depth);
-                    //data[2] = Xw.at<float>(0);
-                    //data[3] = Xw.at<float>(1);
-                    //data[4] = Xw.at<float>(2);
-                }
-
-                std::chrono::high_resolution_clock::time_point t1 = std::chrono::high_resolution_clock::now();
-                //StoreData("Image", id, strSource, ts, buffer.data(), buffer.size());
-                auto res = api.Send(ss.str(), (const unsigned char*)data, sizeof(float)*1000);
-                std::chrono::high_resolution_clock::time_point t2 = std::chrono::high_resolution_clock::now();
-                auto d = std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1).count();
-                float t = d / 1000.0;
-                int c = testUploadCount.Get("ContentGeneration")+1;
-                float total = testUploadTime.Get("ContentGeneration")+t;
-                testUploadCount.Update("ContentGeneration", c);
-                testUploadTime.Update("ContentGeneration", total);
-
-            }
-            */
-            ////추후 수정 필요
-            if(true){
-                data[6] = min_val;
-
-                std::chrono::high_resolution_clock::time_point t1 = std::chrono::high_resolution_clock::now();
-                //StoreData("Image", id, strSource, ts, buffer.data(), buffer.size());
-                auto res = api.Send(ss.str(), (const unsigned char*)data, sizeof(float)*1000);
-                std::chrono::high_resolution_clock::time_point t2 = std::chrono::high_resolution_clock::now();
-                auto d = std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1).count();
-                float t = d / 1000.0;
-                int c = testUploadCount.Get("ContentGeneration")+1;
-                float total = testUploadTime.Get("ContentGeneration")+t;
-                testUploadCount.Update("ContentGeneration", c);
-                testUploadTime.Update("ContentGeneration", total);
-
-            }
-            /*
-            cv::Mat lines = cv::Mat::zeros(3,8,CV_32FC1);
-            for(auto iter = mapPlaneLine.begin(), iend = mapPlaneLine.end(); iter != iend; iter++){
-                int label = iter->first-2;
-                cv::Mat Lw = iter->second;
-                cv::Mat line = EdgeSLAM::PlaneProcessor::LineProjection(R, t, Lw, pCamera->Kfluker);
-                {
-                std::stringstream ss;
-                ss<<label<<" "<<line.t()<<std::endl;
-                WriteLog(ss.str());
-                }
-                //line.copyTo(lines.colRange(label, label+1));
-                line.copyTo(lines.col(label));
-            }
-            {
-            std::stringstream ss;
-            ss<<lines<<std::endl;
-            WriteLog(ss.str());
-            }
-            WriteLog("touch3???");
-            cv::Mat resa = x3D*lines;
-            for(int i = 0; i < 8; i++){
-                float val = 0.0;
-                if(resa.at<float>(i) > 0)
-                    val = 1.0;
-                if(resa.at<float>(i) <>> 0)
-                    val = -1.0;
-                data[i+2] = val;
-            }
-            */
-            //data[2] = resa.at<float>(0);
-            //data[3] = resa.at<float>(1);
-        }else if(val.val[0] == 2){
-            int cid = val.val[1];
-            std::stringstream ss;
-            ss <<"/Store?keyword="<<"VO.SELECTION"<<"&id="<<cid<<"&src="<<strSource<<"&ts="<<std::fixed<<std::setprecision(6)<<ts;
-            //std::chrono::high_resolution_clock::time_point s1 = std::chrono::high_resolution_clock::now();
-            WebAPI api("143.248.6.143", 35005);
-            float data[1000] = {0.0,};
-            api.Send(ss.str(), (const unsigned char*)data, sizeof(float)*1000);
+        }else if(val.val[0] == 1){
+            touchRegionState = TouchRegionState::RealObject;
+        }
+        else if(val.val[0] == 2){
+            touchRegionState = TouchRegionState::VirtualObject;
         }
 
+        {
+            std::stringstream ss;
+            ss<<"Touch = "<<x<<", "<<y<<": "<<val<<" : phase = "<<phase<<std::endl;
+            WriteLog(ss.str());
+        }
 
+        //처음 터치시 평면이 선택되었고 이전에 아무것도 안했으면 등록 과정으로 변경
+        if(pVOProcessor->VOState == EdgeSLAM::VOManageState::None && touchRegionState == TouchRegionState::None && phase == 0){
+            //phase
+            pVOProcessor->VOState = EdgeSLAM::VOManageState::Registration;
+        }
+        if(pVOProcessor->VOState == EdgeSLAM::VOManageState::None && touchRegionState == TouchRegionState::VirtualObject && phase == 0){
+            //phase
+            pVOProcessor->VOState = EdgeSLAM::VOManageState::Manipulation;
+            //가상 객체 선택해야 하는데?? ID는?
+            int cid = val.val[1];
+            pVOProcessor->LastObject = pVOProcessor->VOManageMap.Get(cid);
+        }
+        bool bWorldPos = false;
+        cv::Mat pos;
+        if(pVOProcessor->VOState == EdgeSLAM::VOManageState::Manipulation && !pVOProcessor->LastObject->mbPath){
+            bWorldPos = CreateWorldPosition(x,y, pos);
+        }
+        if(pVOProcessor->VOState == EdgeSLAM::VOManageState::Manipulation && pVOProcessor->LastObject->mbPath && !pVOProcessor->LastObject->mbMoving){
+            bWorldPos = true;
+            pos = cv::Mat::zeros(3,1,CV_32FC1);
+        }
+        if(pVOProcessor->VOState == EdgeSLAM::VOManageState::Registration && phase == 2){
+            bWorldPos = CreateWorldPosition(x,y, pos);
+        }
 
+        if(bWorldPos){
+            cv::Mat data = cv::Mat::zeros(1000,1,CV_32FC1);
+            data.at<float>(0) = x;
+            data.at<float>(1) = y;
+            data.at<float>(2) = pos.at<float>(0);
+            data.at<float>(3) = pos.at<float>(1);
+            data.at<float>(4) = pos.at<float>(2);
+
+            std::string keyword;
+            if(pVOProcessor->VOState == EdgeSLAM::VOManageState::Registration){
+                keyword = "ContentGeneration";
+            }
+            if(pVOProcessor->VOState == EdgeSLAM::VOManageState::Manipulation){
+                id = pVOProcessor->LastObject->mnId;
+                if(pVOProcessor->LastObject->mbPath){
+                    keyword = "VO.REQMOVE";
+                }else{
+                    keyword = "VO.SELECTION";
+                }
+            }
+            std::stringstream ss;
+            ss <<"/Store?keyword="<<keyword<<"&id="<<id<<"&src="<<strSource<<"&ts="<<std::fixed<<std::setprecision(6)<<ts;
+            //std::chrono::high_resolution_clock::time_point s1 = std::chrono::high_resolution_clock::now();
+            WebAPI api("143.248.6.143", 35005);
+            api.Send(ss.str(), (const unsigned char*)data.data, sizeof(float)*1000);
+        }
+
+        if(phase == 2){
+            pVOProcessor->VOState = EdgeSLAM::VOManageState::None;
+            pVOProcessor->LastObject = nullptr;
+        }
 
     }
     void TouchProcessInit(int touchID, int touchPhase, float x, float y, double ts){
@@ -662,8 +644,9 @@ extern "C" {
         POOL->EnqueueJob(LoadData, key, id, src, bTracking);
     }
 
+
     void CreateReferenceFrame(int id, const cv::Mat& data){
-        WriteLog("SetReference::Start!!!!!!!!!!!!!!!!!!!!!!!!!!!!");//, std::ios::trunc
+        //WriteLog("SetReference::Start!!!!!!!!!!!!!!!!!!!!!!!!!!!!");//, std::ios::trunc
         //cv::Mat f1 = GetDataFromUnity("ReferenceFrame");
         //ReleaseUnityData("ReferenceFrame");
         float* tdata = (float*)data.data;
@@ -681,7 +664,7 @@ extern "C" {
 
             ////local map 갱신
             std::set<EdgeSLAM::MapPoint*> spMPs;
-            WriteLog("Reference::Delete::Start");
+            //WriteLog("Reference::Delete::Start");
             ////일정 레퍼런스 프레임이 생기면 디큐의 처음 레퍼런스 프레임 제거
             EdgeSLAM::RefFrame* firstRef = nullptr;
             if(dequeRefFrames.size() >= mnKeyFrame){
@@ -700,7 +683,7 @@ extern "C" {
                     //delete firstRef;
                 }
             }
-            WriteLog("Reference::Delete::End");
+            //WriteLog("Reference::Delete::End");
             std::vector<EdgeSLAM::MapPoint*> vecMPs;
             auto vecRefFrames = dequeRefFrames.get();
             for(int i = 0; i < vecRefFrames.size(); i++){
@@ -719,12 +702,12 @@ extern "C" {
                     }
                 }
             }
-            WriteLog("Reference::UpdateLocalMap::End");
+            //WriteLog("Reference::UpdateLocalMap::End");
             pMap->SetReferenceFrame(pRefFrame);
             LocalMapPoints.set(vecMPs);
             //f1.release();
         }
-        WriteLog("SetReference::End!!!!!!!!!!!!!!!!!!!");
+        //WriteLog("SetReference::End!!!!!!!!!!!!!!!!!!!");
     }
 
 	void VisualizeObjectFlow(cv::Mat& img, int endID){
@@ -783,30 +766,51 @@ extern "C" {
         ss<<"VIS = "<<n<<" "<<vecCells.size();
         WriteLog(ss.str());
 	}
+    void MovingObjectSync(const cv::Mat& data){
 
-    void UpdateLocalMapContent(const cv::Mat& data){
-        {
-            std::stringstream ss;
-            ss<<"Update Local Map = Start"<<std::endl;
-            WriteLog(ss.str(), std::ios::trunc);
+        float* tdata = (float*)data.data;
+        int id = (int)tdata[0];
+        //가상 오브젝트 셋
+        EdgeSLAM::VirtualObject *pVO = nullptr;
+        if(pVOProcessor->VOManageMap.Count(id)){
+            pVO = pVOProcessor->VOManageMap.Get(id);
+            pVO->Set();
         }
+    }
+    void UpdateLocalMapContent(const cv::Mat& data){
+
         float* tdata = (float*)data.data;
         int N = (int)tdata[0];
         int dataIdx = 1;
-        LocalMapContents.Clear();
+
+        //LocalMapContents.Clear();
         for(int i = 0; i < N; i++){
             int id = (int)tdata[dataIdx++];
+            int nid = (int)tdata[dataIdx++];
+            int attr = (int)tdata[dataIdx++];
+            bool battr = false;
+            if(attr > 0)
+                battr = true;
             cv::Mat pos = cv::Mat::zeros(3,1,CV_32FC1);
             pos.at<float>(0) = tdata[dataIdx++];
             pos.at<float>(1) = tdata[dataIdx++];
             pos.at<float>(2) = tdata[dataIdx++];
-            LocalMapContents.Update(id, pos);
+            cv::Mat epos = cv::Mat::zeros(3,1,CV_32FC1);
+            epos.at<float>(0) = tdata[dataIdx++];
+            epos.at<float>(1) = tdata[dataIdx++];
+            epos.at<float>(2) = tdata[dataIdx++];
+            //LocalMapContents.Update(id, pos);
+
+            EdgeSLAM::VirtualObject *pVO = nullptr;
+            if(pVOProcessor->VOManageMap.Count(id)){
+                pVO = pVOProcessor->VOManageMap.Get(id);
+                pVO->Update(pos, epos, nid, battr, mnSkipFrame+1);
+            }else{
+                pVO = new EdgeSLAM::VirtualObject(0,id, nid, pos, epos, battr, mnSkipFrame+1);
+                pVOProcessor->VOManageMap.Update(id, pVO);
+            }
         }
-        {
-        std::stringstream ss;
-        ss<<"Update Local Map = "<<N<<std::endl;
-        WriteLog(ss.str());
-        }
+
     }
 
     void UpdateLocalMapPlane(const cv::Mat& data){
@@ -1070,7 +1074,7 @@ extern "C" {
         //ofile.open(strLogFile.c_str(), std::ios::trunc);
         //ofile<<"Localization::start\n";
         //ofile.close();
-        WriteLog("Localization::start");
+        //WriteLog("Localization::start");
 
         bool res = true;
 
@@ -1085,6 +1089,7 @@ extern "C" {
         cv::Mat gray;
         cv::cvtColor(frame, gray, cv::COLOR_BGR2GRAY);//COLOR_BGRA2GRAY, COLOR_RGBA2GRAY
 
+        ////이미지 전송
         if(id % mnSkipFrame == 0)
         {
             POOL->EnqueueJob(SendImage, id, ts, nQuality, frame);
@@ -1140,14 +1145,10 @@ extern "C" {
                     pCurrFrame->SetPose(Timu*Tprev);
                 }else
                     pCurrFrame->SetPose(pMotionModel->predict());
-                WriteLog("Localization::TrackPrev::Start");
-                {
-                    std::stringstream ss;
-                    ss<<pCurrFrame->GetPose();
-                    WriteLog(ss.str());
-                }
+                //WriteLog("Localization::TrackPrev::Start");
+
                 nMatch = pTracker->TrackWithPrevFrame(pPrevFrame, pCurrFrame, 100.0, 50.0);
-                WriteLog("Localization::TrackPrev::End");
+                //WriteLog("Localization::TrackPrev::End");
                 bTrack = nMatch >= 10;
                 if (!bTrack) {
                     EdgeSLAM::RefFrame* rf = pMap->GetReferenceFrame();
@@ -1156,15 +1157,15 @@ extern "C" {
                         bTrack = nMatch >= 10;
                     }
                 }
-                WriteLog("Localization::TrackPrev::End2");
+                //WriteLog("Localization::TrackPrev::End2");
             }
 
             if (bTrack) {
                 auto vecLocalMPs = LocalMapPoints.get();
                 nMatch = 4;
-                WriteLog("Localization::TrackLocalMap::Start");
+                //WriteLog("Localization::TrackLocalMap::Start");
                 nMatch = pTracker->TrackWithLocalMap(pCurrFrame, vecLocalMPs, 100.0, 50.0);
-                WriteLog("Localization::TrackLocalMap::End");
+                //WriteLog("Localization::TrackLocalMap::End");
                 if (pCurrFrame->mnFrameID < pTracker->mnLastRelocFrameId + 30 && nMatch < 30) {
                     bTrack = false;
                 }
@@ -1191,7 +1192,7 @@ extern "C" {
                 Ow.copyTo(P.row(3));
             }
             else {
-                WriteLog("Tracking::Failed", std::ios::trunc);
+                //WriteLog("Tracking::Failed", std::ios::trunc);
                 pTracker->mTrackState = EdgeSLAM::TrackingState::Failed;
                 pCameraPose->Init();
                 pMotionModel->reset();
@@ -1201,6 +1202,7 @@ extern "C" {
         }
 
         /////라인 프로젝션
+        /*
         {
             cv::Mat R = pCurrFrame->GetRotation();
             cv::Mat t = pCurrFrame->GetTranslation();
@@ -1217,6 +1219,9 @@ extern "C" {
             }
             LocalMapPlaneProjectionLines.Update(10, lines);
         }
+        */
+        /////라인 프로젝션
+
         //시각화
         if(bVisualization){
 
@@ -1239,27 +1244,72 @@ extern "C" {
                 ////오브젝트 위치도 기록하기
 
                 ////Content Visualization
-                auto mapContents = LocalMapContents.Get();
+                auto mapContents = pVOProcessor->VOManageMap.Get();
                 cv::Mat R = pCurrFrame->GetRotation();
                 cv::Mat t = pCurrFrame->GetTranslation();
                 for(auto iter = mapContents.begin(), iend = mapContents.end(); iter != iend; iter++){
-                    cv::Mat pos = iter->second;
+                    auto pVO = iter->second;
+                    pVO->mnTTL--;
+                    if(pVO->mnTTL <0)
+                        continue;
+                    cv::Mat pos = pVO->pos;
                     cv::Mat proj = pCamera->K*(R*pos+t);
+
                     float depth = proj.at<float>(2);
                     if(depth < 0.0)
                         continue;
+
                     cv::Point2f pt(proj.at<float>(0)/depth, mnHeight-proj.at<float>(1)/depth);
+                    cv::Point2f pt2(pt.x, mnHeight-pt.y);
+
                     cv::circle(ori_frame, pt, 3, cv::Scalar(255,0,255,255), -1);
                     cv::circle(ori_frame, pt, 20, cv::Scalar(255,0,255,255), 1);
 
                     int cid = iter->first;
-                    cv::circle(touchInfo[0], pt, 20, cv::Scalar(2),-1);
-                    cv::circle(touchInfo[1], pt, 20, cv::Scalar(cid),-1);
+                    cv::circle(touchInfo[0], pt2, 20, cv::Scalar(2),-1);
+                    cv::circle(touchInfo[1], pt2, 20, cv::Scalar(cid),-1);
+
+                    if(pVO->mbPath){
+                        //line 출력
+                        //start 이면 이동.
+                        //처음 시간, 현재 동작중인지 체크해야 함.
+                        cv::Mat epos = pVO->epos;
+                        cv::Mat proje = pCamera->K*(R*epos+t);
+                        float depth = proje.at<float>(2);
+                        cv::Point2f pte(proje.at<float>(0)/depth, mnHeight-proje.at<float>(1)/depth);
+                        cv::line(ori_frame, pt, pte, cv::Scalar(0,255,0,255),2);
+
+                        if(pVO->mbMoving){
+
+                            //시각화
+                            //넥스트 요청
+                            std::chrono::high_resolution_clock::time_point t2 = std::chrono::high_resolution_clock::now();
+                            auto d = std::chrono::duration_cast<std::chrono::milliseconds>(t2 - pVO->time_start).count();
+                            float tt = d / 1000.0;
+
+                            cv::Mat curr = pVO->UpdateWorldPos(tt);
+                            cv::Mat projc = pCamera->K*(R*curr+t);
+                            float depth = projc.at<float>(2);
+                            cv::Point2f ptc(projc.at<float>(0)/depth, mnHeight-projc.at<float>(1)/depth);
+                            cv::circle(ori_frame, ptc, 5, cv::Scalar(0,0,255,255), -1);
+                            if(pVO->Check(tt)){
+                                int nid = pVO->mnNextId;
+                                pVO->Reset();
+                                cv::Mat data = cv::Mat::zeros(1000,1,CV_32FC1);
+                                std::stringstream ss;
+                                ss <<"/Store?keyword="<<"VO.REQMOVE"<<"&id="<<nid<<"&src="<<strSource<<"&ts="<<std::fixed<<std::setprecision(6)<<ts;
+                                //std::chrono::high_resolution_clock::time_point s1 = std::chrono::high_resolution_clock::now();
+                                WebAPI api("143.248.6.143", 35005);
+                                api.Send(ss.str(), (const unsigned char*)data.data, sizeof(float)*1000);
+                            }
+                        }
+                    }
                 }
                 cv::merge(touchInfo, touchImg);
                 TouchScreenImage.Update(0,touchImg);
                 ////Content Visualization
 
+                /*
                 auto mapPlaneLine = LocalMapPlaneProjectionLines.Get();
                 for(auto iter = mapPlaneLine.begin(), iend = mapPlaneLine.end(); iter != iend; iter++){
                     int label = iter->first;
@@ -1269,14 +1319,13 @@ extern "C" {
                     auto pt12 = EdgeSLAM::PlaneProcessor::GetLinePoint(mnWidth, line);
                     pt12.y = mnHeight-pt12.y;
                     cv::line(ori_frame, pt11, pt12,cv::Scalar(255,255,0,0),2);
-                    /*
-                    if(label == 1){
 
-                    }else if(label == 2){
-                        cv::line(ori_frame, pt11, pt12,cv::Scalar(255,0,0,255),2);
-                    }
-                    */
+                    //if(label == 1){
+                    //}else if(label == 2){
+                    //    cv::line(ori_frame, pt11, pt12,cv::Scalar(255,0,0,255),2);
+                    //}
                 }
+                */
             }
 
 
@@ -1315,11 +1364,17 @@ extern "C" {
         std::chrono::high_resolution_clock::time_point t2 = std::chrono::high_resolution_clock::now();
 		auto d = std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1).count();
 		float t = d / 1000.0;
+		/*
 		{
 		    std::stringstream ss;
 		    ss<<"Localizatio="<<id<<"="<<nMatch<<", "<<t<<std::endl;
 		    WriteLog(ss.str());
 		}
-        return bTrack;
+		*/
+		bool bres = bTrack;
+		if(!bTracking){
+            bres = bResReference;
+		}
+        return bres;
     }
 }

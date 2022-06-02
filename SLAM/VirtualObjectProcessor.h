@@ -17,13 +17,25 @@ namespace EdgeSLAM{
         public:
         VirtualObject();
         VirtualObject(int _model, int _id, const cv::Mat& _pos, int _TTL);
+        VirtualObject(int _model, int _id, int _nid, const cv::Mat& _pos, const cv::Mat& _epos, bool bPath, int _TTL);
         virtual~ VirtualObject();
+        void Update(cv::Mat& _pos, int _TTL);
+        void Update(cv::Mat& _pos, cv::Mat& _epos, int _nid, bool bPath, int _TTL);
+        cv::Mat UpdateWorldPos(float t);
+        void Set();
+        bool Check(float t);
+        void Reset();
         public:
-        int mnId;
+
+        int mnId, mnNextId;
+        bool mbPath;
+        bool mbMoving;
         int mnModelCategory;
-        cv::Mat pos;
+        cv::Mat pos, epos, dir;
         bool mbSelected;
         int mnTTL;
+        float mfTotalTime;
+        std::chrono::high_resolution_clock::time_point time_start;
     };
 
     class VirtualObjectProcessor {
@@ -32,6 +44,7 @@ namespace EdgeSLAM{
             virtual ~VirtualObjectProcessor();
             void Reset();
         public:
+            VOManageState VOState;
             VirtualObject* LastObject;
             ConcurrentMap<int, VirtualObject*> VOManageMap;
     };
