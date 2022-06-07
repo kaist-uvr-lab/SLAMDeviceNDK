@@ -40,8 +40,10 @@ extern "C" {
     std::string strSource;
     std::vector<int> param = std::vector<int>(2);
 
+    ConcurrentMap< int, std::chrono::high_resolution_clock::time_point> MapReferenceLatency;
+    ConcurrentMap< int, std::chrono::high_resolution_clock::time_point> MapTouchLatency;
+
     ConcurrentMap<int, cv::Mat> TouchScreenImage; //가상 객체, 물체 위치 등을 체크하기 위한 것
-    ConcurrentMap<int, cv::Mat> LocalMapContents;
     ConcurrentMap<int, cv::Mat> LocalMapPlanes; //floor, ceil
     ConcurrentMap<int, cv::Mat> LocalMapWallPlanes; //wall
     ConcurrentMap<int, cv::Mat> LocalMapPlaneLines; //lw
@@ -245,8 +247,9 @@ extern "C" {
         for(int i = 0; i < tempRefFrames.size(); i++)
             delete tempRefFrames[i];
         */
+        MapReferenceLatency.Release();
+        MapTouchLatency.Release();
         TouchScreenImage.Release();
-        LocalMapContents.Release();
         LocalMapPoints.Release();
         dequeRefFrames.Release();
         mapSendedImages.Release();
@@ -435,9 +438,27 @@ extern "C" {
     bool bResReference = false;
     void Parsing(int id, std::string key, const cv::Mat& data, bool bTracking){
         if(key == "ReferenceFrame"){
-            if(bTracking)
+
+            /////실험용. 삭제 할 것
+            if(MapReferenceLatency.Count(id)){
+                std::chrono::high_resolution_clock::time_point eTime = std::chrono::high_resolution_clock::now();
+                auto sTime = MapReferenceLatency.Get(id);
+                auto d = std::chrono::duration_cast<std::chrono::milliseconds>(eTime-sTime).count();
+                float t = d / 1000.0;
+
+                cv::Mat data = cv::Mat::zeros(1000,1,CV_32FC1);
+                data.at<float>(0) = t;
+                std::stringstream ss;
+                ss <<"/Store?keyword="<<"TestRef"<<"&id="<<id<<"&src="<<strSource;
+                WebAPI api("143.248.6.143", 35005);
+                api.Send(ss.str(), (const unsigned char*)data.data, sizeof(float)*1000);
+            }
+            /////실험용. 삭제 할 것
+
+            if(bTracking){
+
                 CreateReferenceFrame(id, data);
-            else{
+            }else{
                 float* tdata = (float*)data.data;
                 int N = (int)tdata[0];
                 if( N > 30){
@@ -454,6 +475,20 @@ extern "C" {
             UpdateLocalMapContent(data);
         }else if(key == "VO.MOVE"){
             MovingObjectSync(data);
+        }else if(key == "TouchB"){ ////실험용 삭제 할 것
+            if(MapTouchLatency.Count(id)){
+                std::chrono::high_resolution_clock::time_point eTime = std::chrono::high_resolution_clock::now();
+                auto sTime = MapTouchLatency.Get(id);
+                auto d = std::chrono::duration_cast<std::chrono::milliseconds>(eTime-sTime).count();
+                float t = d / 1000.0;
+                ///
+                cv::Mat data = cv::Mat::zeros(1000,1,CV_32FC1);
+                data.at<float>(0) = t;
+                std::stringstream ss;
+                ss <<"/Store?keyword="<<"TestInter"<<"&id="<<id<<"&src="<<strSource;
+                WebAPI api("143.248.6.143", 35005);
+                api.Send(ss.str(), (const unsigned char*)data.data, sizeof(float)*1000);
+            }
         }
     }
 
@@ -1089,12 +1124,26 @@ extern "C" {
         cv::Mat gray;
         cv::cvtColor(frame, gray, cv::COLOR_BGR2GRAY);//COLOR_BGRA2GRAY, COLOR_RGBA2GRAY
 
+        ////실험용
+        {
+            std::stringstream ss;
+            ss <<"/Store?keyword="<<"TouchA"<<"&id="<<id<<"&src="<<strSource;
+            WebAPI api("143.248.6.143", 35005);
+            cv::Mat data = cv::Mat::zeros(1000,1,CV_32FC1);
+            api.Send(ss.str(), (const unsigned char*)data.data, sizeof(float)*1000);
+            std::chrono::high_resolution_clock::time_point ttt = std::chrono::high_resolution_clock::now();
+            MapTouchLatency.Update(id, ttt);
+        }
+        ////실험용
+
         ////이미지 전송
         if(id % mnSkipFrame == 0)
         {
             POOL->EnqueueJob(SendImage, id, ts, nQuality, frame);
             mapSendedImages.Update(id,gray.clone());
             mnSendedID = id;
+            std::chrono::high_resolution_clock::time_point ttt = std::chrono::high_resolution_clock::now();
+            MapReferenceLatency.Update(id, ttt);
         }
 
         ////데이터 트랜스퍼 용
