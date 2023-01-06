@@ -18,8 +18,6 @@ LOCAL_SRC_FILES :=	$(LOCAL_PATH)/SLAM/UnityLibrary.cpp\
 	$(LOCAL_PATH)/SLAM/SearchPoints.cpp\
 	$(LOCAL_PATH)/SLAM/Tracker.cpp\
 	$(LOCAL_PATH)/SLAM/PlaneProcessor.cpp\
-	$(LOCAL_PATH)/SLAM/GridCell.cpp\
-	$(LOCAL_PATH)/SLAM/GridFrame.cpp\
 	$(LOCAL_PATH)/SLAM/happyhttp.cpp\
 	$(LOCAL_PATH)/SLAM/VirtualObjectProcessor.cpp\
 	$(LOCAL_PATH)/SLAM/WebAPI.cpp
