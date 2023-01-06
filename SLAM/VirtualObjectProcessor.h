@@ -28,6 +28,7 @@ namespace EdgeSLAM{
         public:
 
         int mnId, mnNextId;
+        bool mbVis;
         bool mbPath;
         bool mbMoving;
         int mnModelCategory;

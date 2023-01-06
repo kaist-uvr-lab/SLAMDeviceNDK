@@ -31,6 +31,12 @@ extern "C" {
 
     //std::map<int, int> testUploadCount;
     //std::map<int, float> testUploadTime;
+    ConcurrentMap<int, int> testIndirectCount;
+    ConcurrentMap<int, std::chrono::high_resolution_clock::time_point> testIndirectClock;
+    ConcurrentVector<float> testIndirectLatency;
+    ConcurrentMap<int, std::chrono::high_resolution_clock::time_point> testDirectClock;
+        ConcurrentVector<float> testDirectLatency;
+
     ConcurrentMap<std::string, int> testUploadCount;
     ConcurrentMap<std::string, float> testUploadTime;
 
@@ -240,8 +246,6 @@ extern "C" {
             delete pMap;
         pMap = nullptr;
 
-
-
         /*
         auto tempRefFrames = dequeRefFrames.get();
         for(int i = 0; i < tempRefFrames.size(); i++)
@@ -253,6 +257,10 @@ extern "C" {
         LocalMapPoints.Release();
         dequeRefFrames.Release();
         mapSendedImages.Release();
+        testIndirectLatency.Release();
+        testIndirectClock.Release();
+        testDirectLatency.Release();
+        testDirectClock.Release();
 
         auto mapGrids = cvGridFrames.Get();
         for(auto iter = mapGrids.begin(), iend = mapGrids.end(); iter != iend; iter++){
@@ -274,6 +282,7 @@ extern "C" {
             ss<<key<<" "<<c<<" "<<t<<" "<<t/c<<std::endl;
             ofile2<<ss.str();
         }
+        ofile2.close();
         /*
         for(int i = 10; i <= 100; i+=10){
             std::stringstream ss;
@@ -281,6 +290,22 @@ extern "C" {
             ofile2<<ss.str();
         }
         */
+
+        testfile = strPath+"/Experiment/indirect.txt";
+        ofile2.open(testfile.c_str(), std::ios::trunc);
+        auto latencyVec = testIndirectLatency.get();
+        {
+            std::stringstream ss;
+            ss<<latencyVec.size()<<std::endl;
+            ofile2<<ss.str();
+        }
+
+        for(int i = 0; i < latencyVec.size(); i++){
+            float t = latencyVec[i];
+            std::stringstream ss;
+            ss<<t<<std::endl;
+            ofile2<<ss.str();
+        }
         ofile2.close();
 
         testfile = strPath+"/Experiment/download.txt";
@@ -292,6 +317,9 @@ extern "C" {
             ofile2<<ss.str();
         }
         ofile2.close();
+
+
+
         ////
     }
     void ConnectDevice() {
@@ -343,6 +371,7 @@ extern "C" {
                 if(ifile.eof())
                     break;
             }
+            ifile.close();
             /*
             for(int i = 10; i <= 100; i+=10){
                 getline(ifile, s);
@@ -358,7 +387,20 @@ extern "C" {
                 //ofile2<<ss.str();
             }
             */
+            testfile = strPath+"/Experiment/indirect.txt";
+            ifile.open(testfile);
+            while(!ifile.eof()){
+                getline(ifile, s);
+                std::stringstream ss;
+                float t;
+                ss<< s;
+                ss >>t;
+                testIndirectLatency.push_back(t);
+                if(ifile.eof())
+                    break;
+            }
             ifile.close();
+
             testfile = strPath+"/Experiment/download.txt";
             ifile.open(testfile);
             for(int i = 0; i < 3; i++){
@@ -433,30 +475,11 @@ extern "C" {
         ss.str("");
 		ss<<"DenseFlow::End::!!!!!! "<<id<<"="<<t;
         WriteLog(ss.str());
-
     }
     bool bResReference = false;
     void Parsing(int id, std::string key, const cv::Mat& data, bool bTracking){
         if(key == "ReferenceFrame"){
-
-            /////실험용. 삭제 할 것
-            if(MapReferenceLatency.Count(id)){
-                std::chrono::high_resolution_clock::time_point eTime = std::chrono::high_resolution_clock::now();
-                auto sTime = MapReferenceLatency.Get(id);
-                auto d = std::chrono::duration_cast<std::chrono::milliseconds>(eTime-sTime).count();
-                float t = d / 1000.0;
-
-                cv::Mat data = cv::Mat::zeros(1000,1,CV_32FC1);
-                data.at<float>(0) = t;
-                std::stringstream ss;
-                ss <<"/Store?keyword="<<"TestRef"<<"&id="<<id<<"&src="<<strSource;
-                WebAPI api("143.248.6.143", 35005);
-                api.Send(ss.str(), (const unsigned char*)data.data, sizeof(float)*1000);
-            }
-            /////실험용. 삭제 할 것
-
             if(bTracking){
-
                 CreateReferenceFrame(id, data);
             }else{
                 float* tdata = (float*)data.data;
@@ -475,21 +498,36 @@ extern "C" {
             UpdateLocalMapContent(data);
         }else if(key == "VO.MOVE"){
             MovingObjectSync(data);
-        }else if(key == "TouchB"){ ////실험용 삭제 할 것
-            if(MapTouchLatency.Count(id)){
-                std::chrono::high_resolution_clock::time_point eTime = std::chrono::high_resolution_clock::now();
-                auto sTime = MapTouchLatency.Get(id);
-                auto d = std::chrono::duration_cast<std::chrono::milliseconds>(eTime-sTime).count();
-                float t = d / 1000.0;
-                ///
-                cv::Mat data = cv::Mat::zeros(1000,1,CV_32FC1);
-                data.at<float>(0) = t;
-                std::stringstream ss;
-                ss <<"/Store?keyword="<<"TestInter"<<"&id="<<id<<"&src="<<strSource;
-                WebAPI api("143.248.6.143", 35005);
-                api.Send(ss.str(), (const unsigned char*)data.data, sizeof(float)*1000);
-            }
+        }else if(key == "dr"){
+            DirectSyncLatency(id, data);
         }
+        else if(key == "ir"){
+            IndirectSyncLatency(id, data);
+        }
+    }
+
+    ////추후 삭제
+
+    void IndirectSyncLatency(int id, const cv::Mat& data){
+        auto ts = testIndirectClock.Get(id);
+        std::chrono::high_resolution_clock::time_point te = std::chrono::high_resolution_clock::now();
+        auto d = std::chrono::duration_cast<std::chrono::milliseconds>(te - ts).count();
+        float t = d / 1000.0;
+        testIndirectLatency.push_back(t);
+        std::stringstream ss;
+        ss<<"Indirect = res "<<id<<" "<<t<<" "<<testDirectLatency.size();
+        WriteLog(ss.str());
+    }
+
+    void DirectSyncLatency(int id, const cv::Mat& data){
+        auto ts = testDirectClock.Get(id);
+        std::chrono::high_resolution_clock::time_point te = std::chrono::high_resolution_clock::now();
+        auto d = std::chrono::duration_cast<std::chrono::milliseconds>(te - ts).count();
+        float t = d / 1000.0;
+        testDirectLatency.push_back(t);
+        std::stringstream ss;
+        ss<<"Direct = res "<<id<<" "<<t<<" "<<testDirectLatency.size();
+        WriteLog(ss.str());
     }
 
     void StoreData(std::string key, int id, std::string src, double ts, const void* data, int lendata){
@@ -573,6 +611,7 @@ extern "C" {
         None, RealObject, VirtualObject
     };
 
+    int indirectID = 1;
     void TouchProcess(int id, int phase, float x, float y, double ts){
 
         ////오브젝트 체크
@@ -642,6 +681,15 @@ extern "C" {
             std::string keyword;
             if(pVOProcessor->VOState == EdgeSLAM::VOManageState::Registration){
                 keyword = "ContentGeneration";
+
+                std::chrono::high_resolution_clock::time_point t = std::chrono::high_resolution_clock::now();
+                testDirectClock.Update(id, t);
+                cv::Mat data = cv::Mat::zeros(1000,1,CV_32FC1);
+                std::stringstream ss2;
+                ss2 <<"/Store?keyword="<<"ds"<<"&id="<<id<<"&src="<<strSource<<"&ts="<<std::fixed<<std::setprecision(6)<<ts;
+                WebAPI api("143.248.6.143", 35005);
+                api.Send(ss2.str(), (const unsigned char*)data.data, sizeof(float)*1000);
+
             }
             if(pVOProcessor->VOState == EdgeSLAM::VOManageState::Manipulation){
                 id = pVOProcessor->LastObject->mnId;
@@ -649,6 +697,15 @@ extern "C" {
                     keyword = "VO.REQMOVE";
                 }else{
                     keyword = "VO.SELECTION";
+                    //초기 아이디의 속도 추가
+                    std::chrono::high_resolution_clock::time_point t = std::chrono::high_resolution_clock::now();
+                    testIndirectClock.Update(indirectID++, t);
+                    cv::Mat data = cv::Mat::zeros(1000,1,CV_32FC1);
+                    std::stringstream ss2;
+                    ss2 <<"/Store?keyword="<<"is"<<"&id="<<indirectID<<"&src="<<strSource<<"&ts="<<std::fixed<<std::setprecision(6)<<ts;
+                    WebAPI api("143.248.6.143", 35005);
+                    api.Send(ss2.str(), (const unsigned char*)data.data, sizeof(float)*1000);
+
                 }
             }
             std::stringstream ss;
@@ -812,6 +869,12 @@ extern "C" {
             pVO->Set();
         }
     }
+
+    void TestContentMap(void* data){
+        cv::Mat X3Ds = cv::Mat(500,1, CV_32FC1, data);
+
+    }
+
     void UpdateLocalMapContent(const cv::Mat& data){
 
         float* tdata = (float*)data.data;
@@ -821,7 +884,7 @@ extern "C" {
         //LocalMapContents.Clear();
         for(int i = 0; i < N; i++){
             int id = (int)tdata[dataIdx++];
-            int nid = (int)tdata[dataIdx++];
+            int nid = (int)tdata[dataIdx++]; //경로를 위한 다음 객체 아이디
             int attr = (int)tdata[dataIdx++];
             bool battr = false;
             if(attr > 0)
@@ -840,6 +903,20 @@ extern "C" {
             if(pVOProcessor->VOManageMap.Count(id)){
                 pVO = pVOProcessor->VOManageMap.Get(id);
                 pVO->Update(pos, epos, nid, battr, mnSkipFrame+1);
+
+                //수정 레이턴시 측정
+                /*
+                if(testIndirectClock.Count(id)){
+                    auto ts = testIndirectClock.Get(id);
+                    std::chrono::high_resolution_clock::time_point te = std::chrono::high_resolution_clock::now();
+                    auto d = std::chrono::duration_cast<std::chrono::milliseconds>(te - ts).count();
+                    float t = d / 1000.0;
+                    testIndirectLatency.push_back(t);
+                    std::stringstream ss;
+                    ss<<"Indirect = res"<<id<<" "<<t<<" "<<testIndirectLatency.size();
+                    WriteLog(ss.str());
+                }
+                */
             }else{
                 pVO = new EdgeSLAM::VirtualObject(0,id, nid, pos, epos, battr, mnSkipFrame+1);
                 pVOProcessor->VOManageMap.Update(id, pVO);
@@ -1124,26 +1201,12 @@ extern "C" {
         cv::Mat gray;
         cv::cvtColor(frame, gray, cv::COLOR_BGR2GRAY);//COLOR_BGRA2GRAY, COLOR_RGBA2GRAY
 
-        ////실험용
-        {
-            std::stringstream ss;
-            ss <<"/Store?keyword="<<"TouchA"<<"&id="<<id<<"&src="<<strSource;
-            WebAPI api("143.248.6.143", 35005);
-            cv::Mat data = cv::Mat::zeros(1000,1,CV_32FC1);
-            api.Send(ss.str(), (const unsigned char*)data.data, sizeof(float)*1000);
-            std::chrono::high_resolution_clock::time_point ttt = std::chrono::high_resolution_clock::now();
-            MapTouchLatency.Update(id, ttt);
-        }
-        ////실험용
-
         ////이미지 전송
         if(id % mnSkipFrame == 0)
         {
             POOL->EnqueueJob(SendImage, id, ts, nQuality, frame);
             mapSendedImages.Update(id,gray.clone());
             mnSendedID = id;
-            std::chrono::high_resolution_clock::time_point ttt = std::chrono::high_resolution_clock::now();
-            MapReferenceLatency.Update(id, ttt);
         }
 
         ////데이터 트랜스퍼 용

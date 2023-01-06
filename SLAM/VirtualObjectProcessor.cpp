@@ -5,8 +5,8 @@
 
 namespace EdgeSLAM{
         VirtualObject::VirtualObject(){}
-        VirtualObject::VirtualObject(int _model, int _id, const cv::Mat& _pos, int _TTL):mnId(_id), mnModelCategory(_model), mnTTL(_TTL), pos(_pos){}
-        VirtualObject::VirtualObject(int _model, int _id, int _nid, const cv::Mat& _pos, const cv::Mat& _epos, bool bPath, int _TTL):mfTotalTime(5.0), mnId(_id), mnNextId(_nid), mnModelCategory(_model), mnTTL(_TTL), pos(_pos), epos(_epos), mbPath(bPath), mbMoving(false){}
+        VirtualObject::VirtualObject(int _model, int _id, const cv::Mat& _pos, int _TTL):mnId(_id), mnModelCategory(_model), mnTTL(_TTL), mbVis(false), pos(_pos){}
+        VirtualObject::VirtualObject(int _model, int _id, int _nid, const cv::Mat& _pos, const cv::Mat& _epos, bool bPath, int _TTL):mfTotalTime(5.0), mnId(_id), mnNextId(_nid), mnModelCategory(_model), mnTTL(_TTL), pos(_pos), epos(_epos), mbPath(bPath), mbMoving(false), mbVis(false){}
         VirtualObject::~VirtualObject(){
             pos.release();
             if(mbPath){

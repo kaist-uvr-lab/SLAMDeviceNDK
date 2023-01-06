@@ -17,6 +17,8 @@ extern "C" {
 
     void SetIMUAddress(void* addr, bool bIMU);
 
+    void IndirectSyncLatency(int id, const cv::Mat& data);
+    void DirectSyncLatency(int id, const cv::Mat& data);
     void MovingObjectSync(const cv::Mat& data);
     void UpdateLocalMapContent(const cv::Mat& data);
     void UpdateLocalMapPlane(const cv::Mat& data);
