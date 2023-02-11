@@ -208,7 +208,7 @@ namespace EdgeSLAM {
         if (viewCos<viewingCosLimit)
             return false;
 
-/*
+
         //// Predict scale in the image
         const int nPredictedLevel = pMP->PredictScale(dist, this);
 
@@ -217,7 +217,7 @@ namespace EdgeSLAM {
         pMP->mTrackProjY = v;
         pMP->mnTrackScaleLevel = nPredictedLevel;
         pMP->mTrackViewCos = viewCos;
-*/
+
         return true;
     }
 

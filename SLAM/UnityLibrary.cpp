@@ -27,33 +27,9 @@
 //���� https://darkstart.tistory.com/42
 extern "C" {
 
-    //std::map<int, int> testUploadCount;
-    //std::map<int, float> testUploadTime;
-    ConcurrentMap<int, int> testIndirectCount;
-    ConcurrentMap<int, std::chrono::high_resolution_clock::time_point> testIndirectClock;
-    ConcurrentVector<float> testIndirectLatency;
-    ConcurrentMap<int, std::chrono::high_resolution_clock::time_point> testDirectClock;
-        ConcurrentVector<float> testDirectLatency;
-
-    ConcurrentMap<std::string, int> testUploadCount;
-    ConcurrentMap<std::string, float> testUploadTime;
-
-    std::map<std::string, int> testDownloadCount;
-    std::map<std::string, float> testDownloadTime;
-
     std::string strSource;
     std::vector<int> param = std::vector<int>(2);
 
-    ConcurrentMap< int, std::chrono::high_resolution_clock::time_point> MapReferenceLatency;
-    ConcurrentMap< int, std::chrono::high_resolution_clock::time_point> MapTouchLatency;
-
-    ConcurrentMap<int, cv::Mat> TouchScreenImage; //가상 객체, 물체 위치 등을 체크하기 위한 것
-    ConcurrentMap<int, cv::Mat> LocalMapPlanes; //floor, ceil
-    ConcurrentMap<int, cv::Mat> LocalMapWallPlanes; //wall
-    ConcurrentMap<int, cv::Mat> LocalMapPlaneLines; //lw
-    ConcurrentMap<int, cv::Mat> LocalMapPlaneProjectionLines; //lc
-
-    ConcurrentMap<int, cv::Mat> mapSendedImages;
     ConcurrentDeque<EdgeSLAM::RefFrame*> dequeRefFrames;
     ConcurrentVector<EdgeSLAM::MapPoint*> LocalMapPoints;
 
@@ -65,7 +41,6 @@ extern "C" {
 	EdgeSLAM::CameraPose* pCameraPose;
 	EdgeSLAM::Tracker* pTracker;
 	EdgeSLAM::Map* pMap;
-	EdgeSLAM::VirtualObjectProcessor* pVOProcessor= nullptr;
     ThreadPool::ThreadPool* POOL = nullptr;
 
 	//std::map<int, EdgeSLAM::MapPoint*> EdgeSLAM::RefFrame::MapPoints;
@@ -76,6 +51,8 @@ extern "C" {
 	EdgeSLAM::ORBDetector* EdgeSLAM::Frame::detector;
 	EdgeSLAM::Map* EdgeSLAM::RefFrame::MAP;
 	EdgeSLAM::Map* EdgeSLAM::MapPoint::MAP;
+
+    ConcurrentMap<int, cv::Mat> mapSendedImages;
 
     ////object detection
     cv::Mat ObjectInfo = cv::Mat::zeros(0,6,CV_32FC1);
@@ -151,7 +128,7 @@ extern "C" {
         }
         */
     }
-
+    bool bSetReferenceFrame = false;
     void SetUserName(char* c_src, int len){
         strSource = std::string(c_src, len);
     }
@@ -209,7 +186,11 @@ extern "C" {
         EdgeSLAM::RefFrame::detector = pDetector;
         EdgeSLAM::Frame::detector = pDetector;
         EdgeSLAM::MapPoint::Detector = pDetector;
-
+{
+    std::stringstream ss;
+    ss<<"init = "<<_d1<<", "<<_d2<<" "<<_d3<<", "<<_d4<<", "<<pCamera->bDistorted;
+    WriteLog(ss.str());
+}
 
         return;
 
@@ -233,9 +214,6 @@ extern "C" {
             delete pTracker;
         pTracker = nullptr;
 
-        if(pVOProcessor)
-            delete pVOProcessor;
-        pVOProcessor = nullptr;
 
         if(pMap)
             delete pMap;
@@ -246,78 +224,17 @@ extern "C" {
         for(int i = 0; i < tempRefFrames.size(); i++)
             delete tempRefFrames[i];
         */
-        MapReferenceLatency.Release();
-        MapTouchLatency.Release();
-        TouchScreenImage.Release();
         LocalMapPoints.Release();
         dequeRefFrames.Release();
         mapSendedImages.Release();
-        testIndirectLatency.Release();
-        testIndirectClock.Release();
-        testDirectLatency.Release();
-        testDirectClock.Release();
-
-        ////save txt
-        std::string testfile = strPath+"/Experiment/upload.txt";
-        std::ofstream ofile2;
-        ofile2.open(testfile.c_str(), std::ios::trunc);
-        auto upCountData = testUploadCount.Get();
-        auto upTimeData = testUploadTime.Get();
-        for(auto iter = upCountData.begin(), iend = upCountData.end(); iter != iend; iter++){
-            auto key = iter->first;
-            int c = iter->second;
-            float t= upTimeData[key];
-            std::stringstream ss;
-            ss<<key<<" "<<c<<" "<<t<<" "<<t/c<<std::endl;
-            ofile2<<ss.str();
-        }
-        ofile2.close();
-        /*
-        for(int i = 10; i <= 100; i+=10){
-            std::stringstream ss;
-            ss<<i<<" "<<testUploadCount[i]<<" "<<testUploadTime[i]<<" "<<testUploadTime[i]/testUploadCount[i]<<std::endl;
-            ofile2<<ss.str();
-        }
-        */
-
-        testfile = strPath+"/Experiment/indirect.txt";
-        ofile2.open(testfile.c_str(), std::ios::trunc);
-        auto latencyVec = testIndirectLatency.get();
-        {
-            std::stringstream ss;
-            ss<<latencyVec.size()<<std::endl;
-            ofile2<<ss.str();
-        }
-
-        for(int i = 0; i < latencyVec.size(); i++){
-            float t = latencyVec[i];
-            std::stringstream ss;
-            ss<<t<<std::endl;
-            ofile2<<ss.str();
-        }
-        ofile2.close();
-
-        testfile = strPath+"/Experiment/download.txt";
-        ofile2.open(testfile.c_str(), std::ios::trunc);
-        for(auto iter = testDownloadTime.begin(), iend = testDownloadTime.end(); iter != iend ; iter++){
-            auto key = iter->first;
-            std::stringstream ss;
-            ss<<key<<" "<<testDownloadCount[key]<<" "<<testDownloadTime[key]<<" "<<testDownloadTime[key]/testDownloadCount[key]<<std::endl;
-            ofile2<<ss.str();
-        }
-        ofile2.close();
-
-
-
         ////
     }
     void ConnectDevice() {
 
         pTracker = new EdgeSLAM::Tracker();
-
+        pTracker->filename = strLogFile;
+        EdgeSLAM::SearchPoints::filename = strLogFile;
         pMap = new EdgeSLAM::Map();
-
-        pVOProcessor = new EdgeSLAM::VirtualObjectProcessor();
 
         EdgeSLAM::RefFrame::nId = 0;
         pCameraPose = new EdgeSLAM::CameraPose();
@@ -341,71 +258,6 @@ extern "C" {
         pTracker->mTrackState = EdgeSLAM::TrackingState::NotEstimated;
         LabeledImage = cv::Mat::zeros(0,0,CV_8UC4);
 
-        ////load txt
-        {
-            std::string s;
-            std::string testfile = strPath+"/Experiment/upload.txt";
-            std::ifstream ifile;
-            ifile.open(testfile);
-            while(!ifile.eof()){
-                getline(ifile, s);
-                std::stringstream ss;
-                std::string key;
-                int n;
-                float total, avg;
-                ss<< s;
-                ss >>key>> n >> total >> avg;
-                testUploadCount.Update(key, n);
-                testUploadTime.Update(key, total);
-                if(ifile.eof())
-                    break;
-            }
-            ifile.close();
-            /*
-            for(int i = 10; i <= 100; i+=10){
-                getline(ifile, s);
-                std::stringstream ss;
-                int n, q;
-                float total, avg;
-                ss<< s;
-                ss >> q >> n >> total >> avg;
-
-                testUploadCount[i] = n;
-                testUploadTime[i] = total;
-                //ss<<i<<" = "<<testUploadCount[i]<<" "<<testUploadTime[i]<<" "<<testUploadTime[i]/testUploadCount[i]<<std::endl;
-                //ofile2<<ss.str();
-            }
-            */
-            testfile = strPath+"/Experiment/indirect.txt";
-            ifile.open(testfile);
-            while(!ifile.eof()){
-                getline(ifile, s);
-                std::stringstream ss;
-                float t;
-                ss<< s;
-                ss >>t;
-                testIndirectLatency.push_back(t);
-                if(ifile.eof())
-                    break;
-            }
-            ifile.close();
-
-            testfile = strPath+"/Experiment/download.txt";
-            ifile.open(testfile);
-            for(int i = 0; i < 3; i++){
-                getline(ifile, s);
-                std::stringstream ss;
-                std::string key;
-                int n;
-                float total, avg;
-                ss<< s;
-                ss >>key>> n >> total >> avg;
-                testDownloadCount[key] = n;
-                testDownloadTime[key] = total;
-            }
-            ifile.close();
-        }
-
     }
 
     void* imuAddr;
@@ -422,7 +274,7 @@ extern "C" {
     void Parsing(int id, std::string key, const cv::Mat& data, bool bTracking){
         if(key == "ReferenceFrame"){
             if(bTracking){
-                CreateReferenceFrame(id, data);
+                //CreateReferenceFrame(id, data);
             }else{
                 float* tdata = (float*)data.data;
                 int N = (int)tdata[0];
@@ -433,30 +285,6 @@ extern "C" {
                 }
             }
         }
-    }
-
-    ////추후 삭제
-
-    void IndirectSyncLatency(int id, const cv::Mat& data){
-        auto ts = testIndirectClock.Get(id);
-        std::chrono::high_resolution_clock::time_point te = std::chrono::high_resolution_clock::now();
-        auto d = std::chrono::duration_cast<std::chrono::milliseconds>(te - ts).count();
-        float t = d / 1000.0;
-        testIndirectLatency.push_back(t);
-        std::stringstream ss;
-        ss<<"Indirect = res "<<id<<" "<<t<<" "<<testDirectLatency.size();
-        WriteLog(ss.str());
-    }
-
-    void DirectSyncLatency(int id, const cv::Mat& data){
-        auto ts = testDirectClock.Get(id);
-        std::chrono::high_resolution_clock::time_point te = std::chrono::high_resolution_clock::now();
-        auto d = std::chrono::duration_cast<std::chrono::milliseconds>(te - ts).count();
-        float t = d / 1000.0;
-        testDirectLatency.push_back(t);
-        std::stringstream ss;
-        ss<<"Direct = res "<<id<<" "<<t<<" "<<testDirectLatency.size();
-        WriteLog(ss.str());
     }
 
     void StoreData(std::string key, int id, std::string src, double ts, const void* data, int lendata){
@@ -485,8 +313,6 @@ extern "C" {
         float t = d / 1000.0;
         ss.str("");
         ss<<"download test ="<<t<<" "<<n2;
-        testDownloadCount[key]++;
-        testDownloadTime[key]+=t;
 
         //set data
         cv::Mat temp = cv::Mat::zeros(n2, 1, CV_8UC1);
@@ -494,51 +320,6 @@ extern "C" {
         Parsing(id, key, temp, bTracking);
 
     }
-
-    bool CreateWorldPosition(float x, float y, cv::Mat& _pos){
-        cv::Mat x3D = cv::Mat::ones(1,3,CV_32FC1);
-        x3D.at<float>(0) = x;
-        x3D.at<float>(1) = y;
-
-        cv::Mat R, t;
-        pCameraPose->GetPose(R,t);
-
-        cv::Mat Xw = pCamera->Kinv * x3D.t();
-        Xw.push_back(cv::Mat::ones(1,1,CV_32FC1)); //3x1->4x1
-        Xw = pCameraPose->GetInversePose()*Xw; // 4x4 x 4 x 1
-        float testaaasdf = Xw.at<float>(3);
-        Xw = Xw.rowRange(0,3)/Xw.at<float>(3); // 4x1 -> 3x1
-        cv::Mat Ow = pCameraPose->GetCenter(); // 3x1
-        cv::Mat dir = Xw-Ow; //3x1
-
-        bool bres = false;
-        auto planes = LocalMapPlanes.Get();
-        float min_val = 10000.0;
-        cv::Mat min_param;
-        for(auto iter = planes.begin(), iend = planes.end(); iter != iend; iter++){
-            cv::Mat param = iter->second; //4x1
-            cv::Mat normal = param.rowRange(0,3); //3x1
-            float dist = param.at<float>(3);
-            float a = normal.dot(-dir);
-            if(std::abs(a) < 0.000001)
-                continue;
-            float u = (normal.dot(Ow)+dist)/a;
-            if(u > 0.0 && u < min_val){
-                min_val = u;
-                min_param = param;
-            }
-
-        }
-        if(min_val < 10000.0){
-            _pos =  Ow+dir*min_val;
-            bres = true;
-        }
-        return bres;
-    }
-
-    enum class TouchRegionState {
-        None, RealObject, VirtualObject
-    };
 
     int indirectID = 1;
 
@@ -553,17 +334,22 @@ extern "C" {
         POOL->EnqueueJob(LoadData, key, id, src, bTracking);
     }
 
-
-    void CreateReferenceFrame(int id, const cv::Mat& data){
+    int CreateReferenceFrame(int id, float* data){
+    //void CreateReferenceFrame(int id, const cv::Mat& data){
         //WriteLog("SetReference::Start!!!!!!!!!!!!!!!!!!!!!!!!!!!!");//, std::ios::trunc
         //cv::Mat f1 = GetDataFromUnity("ReferenceFrame");
         //ReleaseUnityData("ReferenceFrame");
-        float* tdata = (float*)data.data;
+        float* tdata = data;
         int N = (int)tdata[0];
         if(N > 30){
+//WriteLog("CreateReference Start");
             auto pRefFrame = new EdgeSLAM::RefFrame(pCamera, tdata);
+
+            if(!mapSendedImages.Count(id))
+                return dequeRefFrames.size();
             cv::Mat img = mapSendedImages.Get(id);
             mapSendedImages.Erase(id);
+
             pDetector->Compute(img, cv::Mat(), pRefFrame->mvKeys, pRefFrame->mDescriptors);
             //std::vector<cv::Mat> vCurrentDesc = Utils::toDescriptorVector(pRefFrame->mDescriptors);
             //pVoc->transform(vCurrentDesc, pRefFrame->mBowVec, pRefFrame->mFeatVec, 4);
@@ -573,7 +359,7 @@ extern "C" {
 
             ////local map 갱신
             std::set<EdgeSLAM::MapPoint*> spMPs;
-            //WriteLog("Reference::Delete::Start");
+//WriteLog("Reference::Delete::Start");
             ////일정 레퍼런스 프레임이 생기면 디큐의 처음 레퍼런스 프레임 제거
             EdgeSLAM::RefFrame* firstRef = nullptr;
             if(dequeRefFrames.size() >= mnKeyFrame){
@@ -613,10 +399,13 @@ extern "C" {
             }
             //WriteLog("Reference::UpdateLocalMap::End");
             pMap->SetReferenceFrame(pRefFrame);
+            if(!bSetReferenceFrame)
+                bSetReferenceFrame = true;
             LocalMapPoints.set(vecMPs);
             //f1.release();
         }
         //WriteLog("SetReference::End!!!!!!!!!!!!!!!!!!!");
+        return dequeRefFrames.size();
     }
 
     std::mutex mMutexLogFile;
@@ -636,10 +425,28 @@ extern "C" {
         t.copyTo(P.row(3));
         StoreData("DevicePosition", id, strSource, ts, P.data, 48);
     }
-
-    bool Localization(void* texdata, void* posedata, int id, double ts, int nQuality, bool bTracking, bool bVisualization){
+    void SendImage(int id, double ts, int nQuality, cv::Mat frame){
+        param[1] = nQuality;
+        std::vector<uchar> buffer;
+        cv::imencode(".jpg", frame, buffer, param);
 
         std::chrono::high_resolution_clock::time_point t1 = std::chrono::high_resolution_clock::now();
+        StoreData("Image", id, strSource, ts, buffer.data(), buffer.size());
+        /*
+        std::chrono::high_resolution_clock::time_point t2 = std::chrono::high_resolution_clock::now();
+        auto d = std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1).count();
+        float t = d / 1000.0;
+        //testUploadCount[nQuality]++;
+        //testUploadTime[nQuality]=testUploadTime[nQuality]+t;
+        std::stringstream ss;
+        ss<<nQuality;
+        int c = testUploadCount.Get(ss.str())+1;
+        float total = testUploadTime.Get(ss.str())+t;
+        testUploadCount.Update(ss.str(), c);
+        testUploadTime.Update(ss.str(), total);
+        */
+    }
+    bool Localization(void* texdata, void* posedata, int id, double ts, int nQuality, bool bTracking, bool bVisualization){
 
         bool res = true;
 
@@ -650,10 +457,20 @@ extern "C" {
         frame.convertTo(frame, CV_8UC3);
 
         //NDK에서 이용하는 이미지로 변환
-        cv::flip(frame, frame,0);
+        //cv::flip(frame, frame,0);
         cv::Mat gray;
         cv::cvtColor(frame, gray, cv::COLOR_BGR2GRAY);//COLOR_BGRA2GRAY, COLOR_RGBA2GRAY
+//WriteLog("1");
+        if(id % mnSkipFrame == 0)
+        {
+            //POOL->EnqueueJob(SendImage, id, ts, nQuality, frame);
+            mapSendedImages.Update(id,gray.clone());
+            mnSendedID = id;
+        }
 
+        ////이 위 까지는 서버 전송을 위해 무조건 동작해야 함.
+
+//WriteLog("2");
         bool bTrack = false;
         int nMatch = -1;
         if(bTracking){
@@ -663,8 +480,12 @@ extern "C" {
                 delete pPrevFrame;
             pPrevFrame = pCurrFrame;
             pCurrFrame = new EdgeSLAM::Frame(gray, pCamera, id);
-
+//WriteLog("3");
+            if(!bSetReferenceFrame)
+                return false;
+//WriteLog("LOCALIZATION START");
             if (pTracker->mTrackState == EdgeSLAM::TrackingState::NotEstimated || pTracker->mTrackState == EdgeSLAM::TrackingState::Failed) {
+
                 EdgeSLAM::RefFrame* rf = pMap->GetReferenceFrame();
                 if (rf) {
                     nMatch = pTracker->TrackWithReferenceFrame(rf, pCurrFrame, 100.0, 50.0);
@@ -674,7 +495,7 @@ extern "C" {
                     }
                 }
             }
-
+//WriteLog("1");
             if (pTracker->mTrackState == EdgeSLAM::TrackingState::Success) {
                 //predict
                 if(bIMU){
@@ -701,12 +522,14 @@ extern "C" {
                 }
                 //WriteLog("Localization::TrackPrev::End2");
             }
-
+//WriteLog("2");
             if (bTrack) {
                 auto vecLocalMPs = LocalMapPoints.get();
                 nMatch = 4;
                 //WriteLog("Localization::TrackLocalMap::Start");
+//WriteLog("2:a");
                 nMatch = pTracker->TrackWithLocalMap(pCurrFrame, vecLocalMPs, 100.0, 50.0);
+//WriteLog("2:b");
                 //WriteLog("Localization::TrackLocalMap::End");
                 if (pCurrFrame->mnFrameID < pTracker->mnLastRelocFrameId + 30 && nMatch < 30) {
                     bTrack = false;
@@ -718,19 +541,22 @@ extern "C" {
                     bTrack = true;
                 }
             }
+//WriteLog("3");
             if (bTrack) {
                 pTracker->mTrackState = EdgeSLAM::TrackingState::Success;
                 cv::Mat T = pCurrFrame->GetPose();
                 pCameraPose->SetPose(T);
                 pMotionModel->update(T);
-                POOL->EnqueueJob(SendDevicePose, id, ts, T.clone());
+                //POOL->EnqueueJob(SendDevicePose, id, ts, T.clone());
 
                 ////유니티에 카메라 포즈 복사
                 ////R과 카메라 센터
                 //cv::Mat t = T.col(3).rowRange(0, 3).t();
                 cv::Mat P = cv::Mat(4,3, CV_32FC1, posedata);
                 T.rowRange(0, 3).colRange(0, 3).copyTo(P.rowRange(0, 3));
+                //센터 또는 t임.
                 cv::Mat Ow = pCameraPose->GetCenter().t();
+                //cv::Mat Ow = T.col(3).rowRange(0,3).t();
                 Ow.copyTo(P.row(3));
             }
             else {
@@ -740,12 +566,42 @@ extern "C" {
                 pMotionModel->reset();
 
             }
+//WriteLog("4");
+            /*
+            if (bTrack) {
 
+                cv::Mat T = pCurrFrame->GetPose();
+                cv::Mat R = T.colRange(0, 3).rowRange(0, 3);
+                cv::Mat t = T.col(3).rowRange(0, 3);
+                cv::Mat K = pCamera->K.clone();
+
+                {
+                    std::stringstream ss;
+                    ss<<T<<K<<std::endl;
+                    WriteLog(ss.str());
+                }
+
+                for (int i = 0; i < pCurrFrame->mvKeys.size(); i++) {
+                    auto pMP = pCurrFrame->mvpMapPoints[i];
+                    int r = 2;
+                    if (pMP && !pMP->isBad())
+                    {
+                        cv::Mat x3D = pMP->GetWorldPos();
+                        cv::Mat proj= K*(R*x3D + t);
+                        float d = proj.at<float>(2);
+                        cv::Point2f pt(proj.at<float>(0) / d, proj.at<float>(1) / d);
+                        cv::circle(frame, pt, r, cv::Scalar(255,0,255), -1);
+                    }
+                }//for frame
+
+                std::stringstream ss;
+                ss<<strPath<<"/color.jpg";
+                cv::imwrite(ss.str(), frame);
+            }//if
+            */
         }
+//WriteLog("7");
 
-        std::chrono::high_resolution_clock::time_point t2 = std::chrono::high_resolution_clock::now();
-		auto d = std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1).count();
-		float t = d / 1000.0;
 		/*
 		{
 		    std::stringstream ss;
@@ -754,9 +610,9 @@ extern "C" {
 		}
 		*/
 		bool bres = bTrack;
-		if(!bTracking){
-            bres = bResReference;
-		}
+		//if(!bTracking){
+        //    bres = bResReference;
+		//}
         return bres;
     }
 }

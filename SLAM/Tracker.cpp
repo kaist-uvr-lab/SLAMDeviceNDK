@@ -56,19 +56,23 @@ namespace EdgeSLAM {
 		return nopt;
 	}
 	int Tracker::TrackWithLocalMap(Frame* cur, std::vector<MapPoint*> vpLocalMPs, float thMaxDesc, float thMinDesc) {
+//std::ofstream ofile;
+//ofile.open(filename.c_str(), std::ios_base::out | std::ios_base::app);
+//ofile<<"a"<<std::endl;
         int nMatch = UpdateVisiblePoints(cur, vpLocalMPs);
+//ofile<<"b"<<std::endl;
 		if (nMatch == 0)
 			return 0;
         float thRadius = 1.0;
 		if (cur->mnFrameID < mnLastRelocFrameId + 2)
 			thRadius = 5.0;
+//ofile<<"c"<<std::endl;
+//여기에서 에러가 발생했었음. 맵포인트 스케일 추적이 왜 주석처리 된건지 모르겠음.
 		int a = SearchPoints::SearchMapByProjection(cur, vpLocalMPs, thMaxDesc, thMinDesc, thRadius);
-		//std::ofstream ofile;
-        //ofile.open(path.c_str(), std::ios_base::out | std::ios_base::app);
-        //ofile<<"Track::LocalMap::Optimize:Start"<<std::endl;
+//ofile<<"Track::LocalMap::Optimize:Start"<<std::endl;
 		Optimizer::PoseOptimization(cur);
-		//ofile<<"Track::LocalMap::Optimize:End"<<std::endl;
-		//ofile.close();
+//ofile<<"Track::LocalMap::Optimize:End"<<std::endl;
+//ofile.close();
 		return UpdateFoundPoints(cur);
 	}
 

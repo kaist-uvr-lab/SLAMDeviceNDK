@@ -859,6 +859,7 @@ namespace EdgeSLAM
 		for (size_t i = 0; i < keypoints.size(); i++)
 			computeOrbDescriptor(keypoints[i], image, &pattern[0], descriptors.ptr((int)i));
 	}
+
 	void ORBextractor::Compute(cv::InputArray _image, cv::InputArray _mask, std::vector<cv::KeyPoint>& _keypoints, cv::OutputArray _descriptors)
 	{
 		vector < vector<KeyPoint> > allKeypoints(nlevels);
@@ -870,7 +871,6 @@ namespace EdgeSLAM
 			kp.pt /= scale;
 			allKeypoints[level].push_back(kp);
 		}
-
 		Mat image = _image.getMat();
 		assert(image.type() == CV_8UC1);
 

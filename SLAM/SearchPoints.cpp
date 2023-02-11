@@ -8,6 +8,8 @@ namespace EdgeSLAM {
 	
 	const int SearchPoints::HISTO_LENGTH = 30;
 
+    std::string SearchPoints::filename;
+
     int SearchPoints::SearchFrameByProjection(RefFrame* ref, Frame* curr, float thMaxDesc, float thMinDesc, float thProjection, bool bCheckOri){
 
         int nmatches = 0;
@@ -265,7 +267,7 @@ namespace EdgeSLAM {
 	{
 
 	    //std::ofstream ofile;
-        //ofile.open(LogFile.c_str(), std::ios_base::out | std::ios_base::app);
+        //ofile.open(filename.c_str(), std::ios_base::out | std::ios_base::app);
         //ofile<<"SearchPoints::SearchMapByProjection::a"<<std::endl;
 
 		int nmatches = 0;
@@ -279,6 +281,7 @@ namespace EdgeSLAM {
 			if (!pMP->mbTrackInView) {
 				continue;
 			}
+			//ofile<<pMP->mnTrackScaleLevel<<std::endl;
 			const int &nPredictedLevel = pMP->mnTrackScaleLevel;
 
 			// The size of the window will depend on the viewing direction

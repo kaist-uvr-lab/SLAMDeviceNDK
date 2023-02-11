@@ -31,6 +31,7 @@ namespace EdgeSLAM {
 		//bool NeedNewKeyFrame(Frame* cur, RefFrame* ref, int nKFs, int nMatchesInliers);
 	public:
 		std::atomic<int> mnLastRelocFrameId, mnLastKeyFrameId;
+		std::string filename;
 		int mnMaxFrame, mnMinFrame;
 		TrackingState mTrackState;
 	};

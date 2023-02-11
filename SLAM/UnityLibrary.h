@@ -13,7 +13,8 @@ extern "C" {
 
     void Parsing(int id, std::string key, const cv::Mat& data, bool bTracking);
     void LoadData(std::string key, int id, std::string src, bool bTracking);
-    void CreateReferenceFrame(int id, const cv::Mat& data);
+    //void CreateReferenceFrame(int id, const cv::Mat& data);
+    int CreateReferenceFrame(int id, float* data);
 
     void SetIMUAddress(void* addr, bool bIMU);
 
