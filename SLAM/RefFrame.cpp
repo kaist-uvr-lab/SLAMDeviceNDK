@@ -39,6 +39,7 @@ namespace EdgeSLAM {
             kp.octave = (int)data[nIdx++];
             kp.angle = data[nIdx++];
             int id = (int)data[nIdx++];
+            int label = (int)data[nIdx++];
             float x = data[nIdx++];
             float y = data[nIdx++];
             float z = data[nIdx++];
@@ -95,6 +96,7 @@ namespace EdgeSLAM {
             kp.octave = (int)data[nIdx++];
             kp.angle = data[nIdx++];
             int id = (int)data[nIdx++];
+            int label = (int)data[nIdx++];
             float x = data[nIdx++];
             float y = data[nIdx++];
             float z = data[nIdx++];
