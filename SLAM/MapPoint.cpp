@@ -25,6 +25,12 @@ namespace EdgeSLAM {
 		return mWorldPos.clone();
 	}
 
+    void MapPoint::SetDescriptor(const cv::Mat& _desc)
+	{
+		std::unique_lock<std::mutex> lock(mMutexPos);
+		mDescriptor = _desc.clone();
+	}
+
     cv::Mat MapPoint::GetDescriptor()
 	{
 		std::unique_lock<std::mutex> lock(mMutexPos);

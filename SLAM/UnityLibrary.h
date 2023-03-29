@@ -14,7 +14,7 @@ extern "C" {
     void Parsing(int id, std::string key, const cv::Mat& data, bool bTracking);
     void LoadData(std::string key, int id, std::string src, bool bTracking);
     //void CreateReferenceFrame(int id, const cv::Mat& data);
-    int CreateReferenceFrame(int id, float* data);
+
 
     void SetIMUAddress(void* addr, bool bIMU);
 
@@ -36,6 +36,8 @@ extern "C" {
     void TestUploaddata(char* data, int datalen, int id, char* ckey, int clen1, char* csrc, int clen2, double ts);
     void TestDownloaddata(int id, char* ckey, int clen1, char* csrc, int clen2, bool bTracking);
 
-
+    bool NeedNewKeyFrame(int fid);
+    int CreateReferenceFrame(int id, float* data);
+    void UpdateLocalMap(int id, int n, void* data);
     bool Localization(void* data, void* posedata, int id, double ts, int nQuality, bool bTracking, bool bVisualization);
 }

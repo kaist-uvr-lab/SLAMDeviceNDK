@@ -22,6 +22,7 @@
 #include <thread>
 
 #include "WebAPI.h"
+#include <atomic>
 //#pragma comment(lib, "ws2_32")
 
 //���� https://darkstart.tistory.com/42
@@ -81,6 +82,11 @@ extern "C" {
 
     std::map<std::string, cv::Mat> UnityData;
     std::mutex mMutexUnityData;
+
+    std::atomic<int> nRefMatches;
+    std::atomic<int> nLastKeyFrameId;
+    std::atomic<int> nMatch;
+    std::atomic<bool> bReqLocalMap;
 
 	void SemanticColorInit() {
 		cv::Mat colormap = cv::Mat::zeros(256, 3, CV_8UC1);
@@ -170,6 +176,11 @@ extern "C" {
 		mnHeight = _h;
         mnSkipFrame = nSkip;
         mnKeyFrame = nKFs;
+
+        nRefMatches = -1;
+        nLastKeyFrameId = -1;
+        nMatch = -1;
+        bReqLocalMap = false;
 
         mnFeature = nfeature;
         mnLevel = nlevel;
@@ -334,6 +345,33 @@ extern "C" {
         POOL->EnqueueJob(LoadData, key, id, src, bTracking);
     }
 
+    int mpid = 0;
+    void UpdateLocalMap(int id, int n, void* data){
+        /*
+        //pts
+        int nPointDataSize = n*12;
+        cv::Mat pts_data = cv::Mat(n*3,1,CV_32FC1,data);
+        //cv::Mat pts = cv::Mat(
+        //desc
+        int nDescDataSize = n*32;
+        uchar* descptr = (uchar*)data+nDescDataSize;
+        cv::Mat desc_data = cv::Mat(n*32,1,CV_8UC1,descptr);
+        //std::memcpy(desc_data.data,data+nPointDataSize,nDescDataSize);
+
+        std::vector<EdgeSLAM::MapPoint*> vpMPs = std::vector<EdgeSLAM::MapPoint*>(n, static_cast<EdgeSLAM::MapPoint*>(nullptr));
+        for(int i = 0; i < n; i++){
+            cv::Mat X = pts_data.rowRange(3*i,3*i+3);
+            cv::Mat desc = desc_data.rowRange(32*i,32*i+32).t();
+            int pid = ++mpid;
+            auto pMP = new EdgeSLAM::MapPoint(pid, X.at<float>(0), X.at<float>(1), X.at<float>(2));
+            pMP->SetDescriptor(desc);
+            vpMPs[i] = pMP;
+        }
+        LocalMapPoints.set(vpMPs);
+        */
+        bReqLocalMap = false;
+    }
+
     int CreateReferenceFrame(int id, float* data){
     //void CreateReferenceFrame(int id, const cv::Mat& data){
         //WriteLog("SetReference::Start!!!!!!!!!!!!!!!!!!!!!!!!!!!!");//, std::ios::trunc
@@ -353,7 +391,7 @@ extern "C" {
             pDetector->Compute(img, cv::Mat(), pRefFrame->mvKeys, pRefFrame->mDescriptors);
             //std::vector<cv::Mat> vCurrentDesc = Utils::toDescriptorVector(pRefFrame->mDescriptors);
             //pVoc->transform(vCurrentDesc, pRefFrame->mBowVec, pRefFrame->mFeatVec, 4);
-
+            nRefMatches = pRefFrame->mvpMapPoints.size();
             pRefFrame->UpdateMapPoints();
             dequeRefFrames.push_back(pRefFrame);
 
@@ -446,6 +484,25 @@ extern "C" {
         testUploadTime.Update(ss.str(), total);
         */
     }
+
+    int nMinFrames = 0;
+    int nMaxFrames = 30;
+    float thRefRatio = 0.9f;
+
+    bool NeedNewKeyFrame(int fid){
+
+        //int nRefMatches = pRefFrame->mvpMapPoints.size();
+        bool bLocalMappingIdle = !bReqLocalMap;
+        const bool c1a = fid >= nLastKeyFrameId + nMaxFrames;
+        const bool c1b = fid >= nLastKeyFrameId + nMinFrames && bLocalMappingIdle;
+        const bool c2 = (nMatch<nRefMatches*thRefRatio) && nMatch>15;
+
+        bReqLocalMap = true;
+        nLastKeyFrameId = fid;
+        return (c1a||c1b)&&c2;
+    }
+
+
     bool Localization(void* texdata, void* posedata, int id, double ts, int nQuality, bool bTracking, bool bVisualization){
 
         bool res = true;
@@ -472,7 +529,7 @@ extern "C" {
 
 //WriteLog("2");
         bool bTrack = false;
-        int nMatch = -1;
+        nMatch = -1;
         if(bTracking){
 
             ////이전 프레임 해제

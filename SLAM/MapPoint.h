@@ -21,6 +21,7 @@ namespace EdgeSLAM {
 	public:
 		void SetWorldPos(float x, float y, float z);
 		cv::Mat GetWorldPos();
+		void SetDescriptor(const cv::Mat& _desc);
 		cv::Mat GetDescriptor();
         void UpdateNormalAndDepth();
         RefFrame* mpRefKF;
