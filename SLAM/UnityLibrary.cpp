@@ -371,7 +371,9 @@ extern "C" {
         */
         bReqLocalMap = false;
     }
-
+    int CreateReferenceFrame2(int id, float* data){
+        return -1;
+    }
     int CreateReferenceFrame(int id, float* data){
     //void CreateReferenceFrame(int id, const cv::Mat& data){
         //WriteLog("SetReference::Start!!!!!!!!!!!!!!!!!!!!!!!!!!!!");//, std::ios::trunc

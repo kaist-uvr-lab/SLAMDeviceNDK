@@ -38,6 +38,7 @@ extern "C" {
 
     bool NeedNewKeyFrame(int fid);
     int CreateReferenceFrame(int id, float* data);
+    int CreateReferenceFrame2(int id, float* data);
     void UpdateLocalMap(int id, int n, void* data);
     bool Localization(void* data, void* posedata, int id, double ts, int nQuality, bool bTracking, bool bVisualization);
 }
