@@ -37,6 +37,12 @@ namespace EdgeSLAM {
 		return mDescriptor.clone();
 	}
 
+    void MapPoint::SetMapPointInfo(float _min, float _max, const cv::Mat& _norm){
+        mfMaxDistance = _max;
+        mfMinDistance = _min;
+        mNormalVector = _norm.clone();
+    }
+
     void MapPoint::UpdateNormalAndDepth()
     {
         std::map<RefFrame*, size_t> observations;

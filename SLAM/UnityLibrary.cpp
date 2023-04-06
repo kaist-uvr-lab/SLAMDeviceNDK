@@ -135,6 +135,7 @@ extern "C" {
         */
     }
     bool bSetReferenceFrame = false;
+    bool bSetLocalMap = false;
     void SetUserName(char* c_src, int len){
         strSource = std::string(c_src, len);
     }
@@ -346,41 +347,54 @@ extern "C" {
     }
 
     int mpid = 0;
+    const int mpInfoSize = 36; //id + 3d + min+max+normal
+    const int nNumElement = mpInfoSize/4;
+
     void UpdateLocalMap(int id, int n, void* data){
-        /*
+
         //pts
-        int nPointDataSize = n*12;
-        cv::Mat pts_data = cv::Mat(n*3,1,CV_32FC1,data);
-        //cv::Mat pts = cv::Mat(
+        int nPointDataSize = n*mpInfoSize;
+        cv::Mat pts_data = cv::Mat(n,nNumElement,CV_32FC1,data);
         //desc
         int nDescDataSize = n*32;
-        uchar* descptr = (uchar*)data+nDescDataSize;
-        cv::Mat desc_data = cv::Mat(n*32,1,CV_8UC1,descptr);
+        uchar* descptr = (uchar*)data+nPointDataSize;
+        cv::Mat desc_data = cv::Mat(n,32,CV_8UC1,descptr);
+//WriteLog("A");
         //std::memcpy(desc_data.data,data+nPointDataSize,nDescDataSize);
 
         std::vector<EdgeSLAM::MapPoint*> vpMPs = std::vector<EdgeSLAM::MapPoint*>(n, static_cast<EdgeSLAM::MapPoint*>(nullptr));
         for(int i = 0; i < n; i++){
-            cv::Mat X = pts_data.rowRange(3*i,3*i+3);
-            cv::Mat desc = desc_data.rowRange(32*i,32*i+32).t();
+            int id = (int)pts_data.at<float>(i,0);
+            float minDist = pts_data.at<float>(i,1);
+            float maxDist = pts_data.at<float>(i,2);
+            cv::Mat X = pts_data.row(i).colRange(3,6);
+            cv::Mat norm = pts_data.row(i).colRange(6,9).t();
+            cv::Mat desc = desc_data.row(i).clone();
             int pid = ++mpid;
             auto pMP = new EdgeSLAM::MapPoint(pid, X.at<float>(0), X.at<float>(1), X.at<float>(2));
+            pMP->SetMapPointInfo(minDist,maxDist,norm);
             pMP->SetDescriptor(desc);
             vpMPs[i] = pMP;
         }
+//WriteLog("B");
         LocalMapPoints.set(vpMPs);
-        */
+        if(!bSetLocalMap){
+            bSetLocalMap = true;
+        }
+//WriteLog("C");
         bReqLocalMap = false;
     }
     int CreateReferenceFrame2(int id, float* data){
         return -1;
     }
-    int CreateReferenceFrame(int id, float* data){
+    int CreateReferenceFrame(int id, bool bNotBase, float* data){
     //void CreateReferenceFrame(int id, const cv::Mat& data){
         //WriteLog("SetReference::Start!!!!!!!!!!!!!!!!!!!!!!!!!!!!");//, std::ios::trunc
         //cv::Mat f1 = GetDataFromUnity("ReferenceFrame");
         //ReleaseUnityData("ReferenceFrame");
         float* tdata = data;
         int N = (int)tdata[0];
+
         if(N > 30){
 //WriteLog("CreateReference Start");
             auto pRefFrame = new EdgeSLAM::RefFrame(pCamera, tdata);
@@ -395,55 +409,67 @@ extern "C" {
             //pVoc->transform(vCurrentDesc, pRefFrame->mBowVec, pRefFrame->mFeatVec, 4);
             nRefMatches = pRefFrame->mvpMapPoints.size();
             pRefFrame->UpdateMapPoints();
-            dequeRefFrames.push_back(pRefFrame);
 
-            ////local map 갱신
-            std::set<EdgeSLAM::MapPoint*> spMPs;
-//WriteLog("Reference::Delete::Start");
-            ////일정 레퍼런스 프레임이 생기면 디큐의 처음 레퍼런스 프레임 제거
-            EdgeSLAM::RefFrame* firstRef = nullptr;
-            if(dequeRefFrames.size() >= mnKeyFrame){
-                firstRef = dequeRefFrames.front();
-                dequeRefFrames.pop_front();
-                ////delete ref frame
-                if(firstRef){
-                    auto vpMPs = firstRef->mvpMapPoints;
-                    for(int i =0; i < firstRef->N; i++){
-                        auto pMP = vpMPs[i];
-                        if(!pMP || pMP->isBad()){
+            if(bNotBase){
+                dequeRefFrames.push_back(pRefFrame);
+                ////local map 갱신
+                std::set<EdgeSLAM::MapPoint*> spMPs;
+
+                ////일정 레퍼런스 프레임이 생기면 디큐의 처음 레퍼런스 프레임 제거
+                //옵저베이션 제거
+                EdgeSLAM::RefFrame* firstRef = nullptr;
+                if(dequeRefFrames.size() >= mnKeyFrame){
+                    firstRef = dequeRefFrames.front();
+                    dequeRefFrames.pop_front();
+                    ////delete ref frame
+                    if(firstRef){
+                        auto vpMPs = firstRef->mvpMapPoints;
+                        for(int i =0; i < firstRef->N; i++){
+                            auto pMP = vpMPs[i];
+                            if(!pMP || pMP->isBad()){
+                                continue;
+                            }
+                            pMP->EraseObservation(firstRef);
+                        }
+                        //delete firstRef;
+                    }
+                }
+
+                ////로컬맵 생성
+                std::vector<EdgeSLAM::MapPoint*> vecMPs;
+                auto vecRefFrames = dequeRefFrames.get();
+                for(int i = 0; i < vecRefFrames.size(); i++){
+                    auto ref = vecRefFrames[i];
+                    if(!ref)
+                        continue;
+                    auto vpMPs = ref->mvpMapPoints;
+                    for(int j =0; j < ref->N; j++){
+                        auto pMP = vpMPs[j];
+                        if(!pMP || pMP->isBad() || spMPs.count(pMP)){
                             continue;
                         }
-                        pMP->EraseObservation(firstRef);
-                    }
-                    //delete firstRef;
-                }
-            }
-            //WriteLog("Reference::Delete::End");
-            std::vector<EdgeSLAM::MapPoint*> vecMPs;
-            auto vecRefFrames = dequeRefFrames.get();
-            for(int i = 0; i < vecRefFrames.size(); i++){
-                auto ref = vecRefFrames[i];
-                if(!ref)
-                    continue;
-                auto vpMPs = ref->mvpMapPoints;
-                for(int j =0; j < ref->N; j++){
-                    auto pMP = vpMPs[j];
-                    if(!pMP || pMP->isBad() || spMPs.count(pMP)){
-                        continue;
-                    }
-                    if(pRefFrame->is_in_frustum(pMP, 0.5)){
-                        vecMPs.push_back(pMP);
-                        spMPs.insert(pMP);
+                        if(pRefFrame->is_in_frustum(pMP, 0.5)){
+                            vecMPs.push_back(pMP);
+                            spMPs.insert(pMP);
+                        }
                     }
                 }
+                LocalMapPoints.set(vecMPs);
+                if(!bSetLocalMap){
+                    bSetLocalMap = true;
+                }
             }
+
             //WriteLog("Reference::UpdateLocalMap::End");
             pMap->SetReferenceFrame(pRefFrame);
-            if(!bSetReferenceFrame)
+            if(!bSetReferenceFrame){
                 bSetReferenceFrame = true;
-            LocalMapPoints.set(vecMPs);
+            }
+
+            //LocalMapPoints.set(vecMPs);
             //f1.release();
         }
+
         //WriteLog("SetReference::End!!!!!!!!!!!!!!!!!!!");
         return dequeRefFrames.size();
     }
@@ -505,7 +531,7 @@ extern "C" {
     }
 
 
-    bool Localization(void* texdata, void* posedata, int id, double ts, int nQuality, bool bTracking, bool bVisualization){
+    bool Localization(void* texdata, void* posedata, int id, double ts, int nQuality, bool bNotBase, bool bTracking, bool bVisualization){
 
         bool res = true;
 
@@ -540,7 +566,7 @@ extern "C" {
             pPrevFrame = pCurrFrame;
             pCurrFrame = new EdgeSLAM::Frame(gray, pCamera, id);
 //WriteLog("3");
-            if(!bSetReferenceFrame)
+            if(!bSetReferenceFrame || !bSetLocalMap)
                 return false;
 //WriteLog("LOCALIZATION START");
             if (pTracker->mTrackState == EdgeSLAM::TrackingState::NotEstimated || pTracker->mTrackState == EdgeSLAM::TrackingState::Failed) {
@@ -554,7 +580,7 @@ extern "C" {
                     }
                 }
             }
-//WriteLog("1");
+
             if (pTracker->mTrackState == EdgeSLAM::TrackingState::Success) {
                 //predict
                 if(bIMU){

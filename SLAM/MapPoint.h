@@ -24,6 +24,7 @@ namespace EdgeSLAM {
 		void SetDescriptor(const cv::Mat& _desc);
 		cv::Mat GetDescriptor();
         void UpdateNormalAndDepth();
+        void SetMapPointInfo(float _min, float _max, const cv::Mat& _norm);
         RefFrame* mpRefKF;
 
     public:
