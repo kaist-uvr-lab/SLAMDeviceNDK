@@ -37,6 +37,7 @@ extern "C" {
     void TestDownloaddata(int id, char* ckey, int clen1, char* csrc, int clen2, bool bTracking);
 
     bool NeedNewKeyFrame(int fid);
+    void NeedNewKeyFrame2(int fid);
     int CreateReferenceFrame(int id, bool bNotBase, float* data);
     int CreateReferenceFrame2(int id, float* data);
     void UpdateLocalMap(int id, int n, void* data);

@@ -383,6 +383,7 @@ extern "C" {
         }
 //WriteLog("C");
         bReqLocalMap = false;
+        nLastKeyFrameId = id;
     }
     int CreateReferenceFrame2(int id, float* data){
         return -1;
@@ -525,9 +526,16 @@ extern "C" {
         const bool c1b = fid >= nLastKeyFrameId + nMinFrames && bLocalMappingIdle;
         const bool c2 = (nMatch<nRefMatches*thRefRatio) && nMatch>15;
 
+        bool bres = (c1a||c1b)&&c2;
+        if(bres){
+            bReqLocalMap = true;
+            //nLastKeyFrameId = fid;
+        }
+        return bres;
+    }
+    void NeedNewKeyFrame2(int fid){
         bReqLocalMap = true;
-        nLastKeyFrameId = fid;
-        return (c1a||c1b)&&c2;
+        //return bLocalMappingIdle;
     }
 
 
