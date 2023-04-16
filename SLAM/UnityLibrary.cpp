@@ -80,6 +80,9 @@ extern "C" {
     std::ofstream ofile;
     std::string strLogFile;
 
+    std::ofstream write_latency;
+    std::string strLatencyFile;
+
     std::map<std::string, cv::Mat> UnityData;
     std::mutex mMutexUnityData;
 
@@ -144,6 +147,7 @@ extern "C" {
         std::stringstream ss;
         ss << strPath << "/debug.txt";
         strLogFile = strPath+"/debug.txt";
+        strLatencyFile = strPath+"/latency.csv";
     }
 
     void SetDataFromUnity(void* data, char* ckeyword, int len, int strlen){
@@ -299,19 +303,23 @@ extern "C" {
         }
     }
 
-    void StoreData(std::string key, int id, std::string src, double ts, const void* data, int lendata){
+    void StoreData(std::string key, int id, std::string src, double ts, const void* data, int lendata, int quality, bool bWriteLatency){
         std::stringstream ss;
 		ss <<"/Store?keyword="<<key<<"&id="<<id<<"&src="<<src<<"&ts="<<std::fixed<<std::setprecision(6)<<ts;
-		//std::chrono::high_resolution_clock::time_point s1 = std::chrono::high_resolution_clock::now();
+		std::chrono::high_resolution_clock::time_point s1 = std::chrono::high_resolution_clock::now();
 		WebAPI api("143.248.6.143", 35005);
         auto res = api.Send(ss.str(), (const unsigned char*)data, lendata);
 
-        //std::chrono::high_resolution_clock::time_point s2 = std::chrono::high_resolution_clock::now();
-        //auto d = std::chrono::duration_cast<std::chrono::milliseconds>(s2 - s1).count();
-        //float t = d / 1000.0;
-        //ss.str("");
-        //ss<<"upload test ="<<t<<" "<<lendata;
-        //WriteLog(ss.str());
+        if(bWriteLatency){
+            write_latency.open(strLatencyFile.c_str(), std::ios_base::out | std::ios_base::app);
+            std::chrono::high_resolution_clock::time_point s2 = std::chrono::high_resolution_clock::now();
+            auto d = std::chrono::duration_cast<std::chrono::milliseconds>(s2 - s1).count();
+            float t = d / 1000.0;
+            ss.str("");
+            ss<<key<<","<<id<<","<<quality<<","<<lendata<<","<<t;
+            write_latency<<ss.str()<<std::endl;
+            write_latency.close();
+        }
     }
     void LoadData(std::string key, int id, std::string src, bool bTracking){
         std::stringstream ss;
@@ -335,12 +343,12 @@ extern "C" {
 
     int indirectID = 1;
 
-    void TestUploaddata(char* data, int datalen, int id, char* ckey, int clen1, char* csrc, int clen2, double ts){
+    void UploadData(char* data, int datalen, int id, char* ckey, int clen1, char* csrc, int clen2, double ts, int quality, bool bWriteLatency){
         std::string key(ckey, clen1);
         std::string src(csrc, clen2);
-        POOL->EnqueueJob(StoreData, key, id, src, ts, data, datalen);
+        POOL->EnqueueJob(StoreData, key, id, src, ts, data, datalen, quality, bWriteLatency);
     }
-    void TestDownloaddata(int id, char* ckey, int clen1, char* csrc, int clen2, bool bTracking){
+    void DownloadData(int id, char* ckey, int clen1, char* csrc, int clen2, bool bTracking){
         std::string key(ckey, clen1);
         std::string src(csrc, clen2);
         POOL->EnqueueJob(LoadData, key, id, src, bTracking);
@@ -472,7 +480,7 @@ extern "C" {
         }
 
         //WriteLog("SetReference::End!!!!!!!!!!!!!!!!!!!");
-        return dequeRefFrames.size();
+        return N;
     }
 
     std::mutex mMutexLogFile;
@@ -490,7 +498,7 @@ extern "C" {
         T.rowRange(0, 3).colRange(0, 3).copyTo(P.rowRange(0, 3));
         cv::Mat t = T.col(3).rowRange(0, 3).t();
         t.copyTo(P.row(3));
-        StoreData("DevicePosition", id, strSource, ts, P.data, 48);
+        StoreData("DevicePosition", id, strSource, ts, P.data, 48, -1, false);
     }
     void SendImage(int id, double ts, int nQuality, cv::Mat frame){
         param[1] = nQuality;
@@ -498,20 +506,7 @@ extern "C" {
         cv::imencode(".jpg", frame, buffer, param);
 
         std::chrono::high_resolution_clock::time_point t1 = std::chrono::high_resolution_clock::now();
-        StoreData("Image", id, strSource, ts, buffer.data(), buffer.size());
-        /*
-        std::chrono::high_resolution_clock::time_point t2 = std::chrono::high_resolution_clock::now();
-        auto d = std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1).count();
-        float t = d / 1000.0;
-        //testUploadCount[nQuality]++;
-        //testUploadTime[nQuality]=testUploadTime[nQuality]+t;
-        std::stringstream ss;
-        ss<<nQuality;
-        int c = testUploadCount.Get(ss.str())+1;
-        float total = testUploadTime.Get(ss.str())+t;
-        testUploadCount.Update(ss.str(), c);
-        testUploadTime.Update(ss.str(), total);
-        */
+        StoreData("Image", id, strSource, ts, buffer.data(), buffer.size(),-1,false);
     }
 
     int nMinFrames = 0;

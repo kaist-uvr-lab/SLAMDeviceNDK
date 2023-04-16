@@ -33,13 +33,12 @@ extern "C" {
     void TouchProcessInit(int touchID, int touchPhase, float x, float y, double ts);
     void WriteLog(std::string str, std::ios_base::openmode mode = std::ios_base::out | std::ios_base::app);
 
-    void TestUploaddata(char* data, int datalen, int id, char* ckey, int clen1, char* csrc, int clen2, double ts);
-    void TestDownloaddata(int id, char* ckey, int clen1, char* csrc, int clen2, bool bTracking);
-
     bool NeedNewKeyFrame(int fid);
     void NeedNewKeyFrame2(int fid);
     int CreateReferenceFrame(int id, bool bNotBase, float* data);
     int CreateReferenceFrame2(int id, float* data);
     void UpdateLocalMap(int id, int n, void* data);
     bool Localization(void* data, void* posedata, int id, double ts, int nQuality, bool bNotBase, bool bTracking, bool bVisualization);
+    void UploadData(char* data, int datalen, int id, char* ckey, int clen1, char* csrc, int clen2, double ts, int quality, bool bWriteLatency);
+    void DownloadData(int id, char* ckey, int clen1, char* csrc, int clen2, bool bTracking);
 }
