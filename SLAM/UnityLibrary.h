@@ -12,10 +12,6 @@ extern "C" {
     void DisconnectDevice();
 
     void Parsing(int id, std::string key, const cv::Mat& data, bool bTracking);
-    void LoadData(std::string key, int id, std::string src, bool bTracking);
-    //void CreateReferenceFrame(int id, const cv::Mat& data);
-
-
     void SetIMUAddress(void* addr, bool bIMU);
 
     void IndirectSyncLatency(int id, const cv::Mat& data);
@@ -39,6 +35,6 @@ extern "C" {
     int CreateReferenceFrame2(int id, float* data);
     void UpdateLocalMap(int id, int n, void* data);
     bool Localization(void* data, void* posedata, int id, double ts, int nQuality, bool bNotBase, bool bTracking, bool bVisualization);
-    void UploadData(char* data, int datalen, int id, char* ckey, int clen1, char* csrc, int clen2, double ts, int quality, bool bWriteLatency);
-    void DownloadData(int id, char* ckey, int clen1, char* csrc, int clen2, bool bTracking);
+    float UploadData(char* data, int datalen, int id, char* ckey, int clen1, char* csrc, int clen2, double ts);
+    void* DownloadData(int id, char* ckey, int clen1, char* csrc, int clen2, int& N, float& t);
 }

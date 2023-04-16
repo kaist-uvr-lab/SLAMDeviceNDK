@@ -303,55 +303,52 @@ extern "C" {
         }
     }
 
-    void StoreData(std::string key, int id, std::string src, double ts, const void* data, int lendata, int quality, bool bWriteLatency){
+    float  StoreData(std::string key, int id, std::string src, double ts, const void* data, int lendata){
         std::stringstream ss;
 		ss <<"/Store?keyword="<<key<<"&id="<<id<<"&src="<<src<<"&ts="<<std::fixed<<std::setprecision(6)<<ts;
 		std::chrono::high_resolution_clock::time_point s1 = std::chrono::high_resolution_clock::now();
 		WebAPI api("143.248.6.143", 35005);
         auto res = api.Send(ss.str(), (const unsigned char*)data, lendata);
-
-        if(bWriteLatency){
-            write_latency.open(strLatencyFile.c_str(), std::ios_base::out | std::ios_base::app);
-            std::chrono::high_resolution_clock::time_point s2 = std::chrono::high_resolution_clock::now();
-            auto d = std::chrono::duration_cast<std::chrono::milliseconds>(s2 - s1).count();
-            float t = d / 1000.0;
-            ss.str("");
-            ss<<key<<","<<id<<","<<quality<<","<<lendata<<","<<t;
-            write_latency<<ss.str()<<std::endl;
-            write_latency.close();
-        }
+        std::chrono::high_resolution_clock::time_point s2 = std::chrono::high_resolution_clock::now();
+        auto d = std::chrono::duration_cast<std::chrono::milliseconds>(s2 - s1).count();
+        //float t = d / 1000.0;
+        return d;
     }
-    void LoadData(std::string key, int id, std::string src, bool bTracking){
+    std::tuple<std::string, int, float> LoadData(std::string key, int id, std::string src){
         std::stringstream ss;
 		ss <<"/Load?keyword="<<key<<"&id="<<id<<"&src="<<src;//"<< "/Load?keyword=Keypoints" << "&id=" << id << "&src=" << user->userName;
 		std::chrono::high_resolution_clock::time_point s1 = std::chrono::high_resolution_clock::now();
 		WebAPI api("143.248.6.143", 35005);
         auto res = api.Send(ss.str(),"");
-        int n2 = res.size();
         std::chrono::high_resolution_clock::time_point s2 = std::chrono::high_resolution_clock::now();
         auto d = std::chrono::duration_cast<std::chrono::milliseconds>(s2 - s1).count();
-        float t = d / 1000.0;
-        ss.str("");
-        ss<<"download test ="<<t<<" "<<n2;
-
         //set data
-        cv::Mat temp = cv::Mat::zeros(n2, 1, CV_8UC1);
-        std::memcpy(temp.data, res.data(), n2);
-        Parsing(id, key, temp, bTracking);
-
+        int n = res.size() / 4;
+        //void* addr = (void*)res.data();
+        //cv::Mat temp = cv::Mat(n, 1, CV_32FC1,(void*)res.data());
+        //std::memcpy(temp.data, res.data(), res.size());
+        return std::make_tuple(res,n,d);
     }
 
     int indirectID = 1;
 
-    void UploadData(char* data, int datalen, int id, char* ckey, int clen1, char* csrc, int clen2, double ts, int quality, bool bWriteLatency){
+    float UploadData(char* data, int datalen, int id, char* ckey, int clen1, char* csrc, int clen2, double ts){
         std::string key(ckey, clen1);
         std::string src(csrc, clen2);
-        POOL->EnqueueJob(StoreData, key, id, src, ts, data, datalen, quality, bWriteLatency);
+        auto res = POOL->EnqueueJob(StoreData, key, id, src, ts, data, datalen);
+        float t = res.get();
+        return t;
     }
-    void DownloadData(int id, char* ckey, int clen1, char* csrc, int clen2, bool bTracking){
+    void* DownloadData(int id, char* ckey, int clen1, char* csrc, int clen2, int& N, float& t){
         std::string key(ckey, clen1);
         std::string src(csrc, clen2);
-        POOL->EnqueueJob(LoadData, key, id, src, bTracking);
+        auto res = POOL->EnqueueJob(LoadData, key, id, src);
+        auto var = res.get();
+        auto temp = std::get<0>(var);
+        N = std::get<1>(var);
+        t = std::get<2>(var);
+        void* addr = (void*)temp.data();
+        return addr;
     }
 
     int mpid = 0;
@@ -498,7 +495,7 @@ extern "C" {
         T.rowRange(0, 3).colRange(0, 3).copyTo(P.rowRange(0, 3));
         cv::Mat t = T.col(3).rowRange(0, 3).t();
         t.copyTo(P.row(3));
-        StoreData("DevicePosition", id, strSource, ts, P.data, 48, -1, false);
+        StoreData("DevicePosition", id, strSource, ts, P.data, 48);
     }
     void SendImage(int id, double ts, int nQuality, cv::Mat frame){
         param[1] = nQuality;
@@ -506,7 +503,7 @@ extern "C" {
         cv::imencode(".jpg", frame, buffer, param);
 
         std::chrono::high_resolution_clock::time_point t1 = std::chrono::high_resolution_clock::now();
-        StoreData("Image", id, strSource, ts, buffer.data(), buffer.size(),-1,false);
+        StoreData("Image", id, strSource, ts, buffer.data(), buffer.size());
     }
 
     int nMinFrames = 0;
