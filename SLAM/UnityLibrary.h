@@ -37,4 +37,5 @@ extern "C" {
     bool Localization(void* data, void* posedata, int id, double ts, int nQuality, bool bNotBase, bool bTracking, bool bVisualization);
     float UploadData(char* data, int datalen, int id, char* ckey, int clen1, char* csrc, int clen2, double ts);
     void* DownloadData(int id, char* ckey, int clen1, char* csrc, int clen2, int& N, float& t);
+    void ReleaseDownloadData(int id, char* ckey, int ckeylen);
 }

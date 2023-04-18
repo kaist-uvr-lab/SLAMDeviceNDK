@@ -33,6 +33,7 @@ extern "C" {
 
     ConcurrentDeque<EdgeSLAM::RefFrame*> dequeRefFrames;
     ConcurrentVector<EdgeSLAM::MapPoint*> LocalMapPoints;
+    ConcurrentMap<std::string, void*> mapDownloadData;
 
 	EdgeSLAM::Frame* pCurrFrame = nullptr;
 	EdgeSLAM::Frame* pPrevFrame = nullptr;
@@ -243,6 +244,7 @@ extern "C" {
         LocalMapPoints.Release();
         dequeRefFrames.Release();
         mapSendedImages.Release();
+        mapDownloadData.Release();
         ////
     }
     void ConnectDevice() {
@@ -324,9 +326,6 @@ extern "C" {
         auto d = std::chrono::duration_cast<std::chrono::milliseconds>(s2 - s1).count();
         //set data
         int n = res.size() / 4;
-        //void* addr = (void*)res.data();
-        //cv::Mat temp = cv::Mat(n, 1, CV_32FC1,(void*)res.data());
-        //std::memcpy(temp.data, res.data(), res.size());
         return std::make_tuple(res,n,d);
     }
 
@@ -347,8 +346,25 @@ extern "C" {
         auto temp = std::get<0>(var);
         N = std::get<1>(var);
         t = std::get<2>(var);
-        void* addr = (void*)temp.data();
-        return addr;
+        std::stringstream ss;
+        ss<<key<<id;
+
+        void* dataptr = (void*)malloc(sizeof(float)*N);
+        memcpy(dataptr,temp.data(), sizeof(float)*N);
+        mapDownloadData.Update(ss.str(),dataptr);
+        return dataptr;
+    }
+
+    void ReleaseDownloadData(int id, char* ckey, int ckeylen){
+        std::string key(ckey, ckeylen);
+        std::stringstream ss;
+        ss<<key<<id;
+        std::string datakey = ss.str();
+        if(mapDownloadData.Count(datakey)){
+            auto ptr = mapDownloadData.Get(datakey);
+            free(ptr);
+            mapDownloadData.Erase(datakey);
+        }
     }
 
     int mpid = 0;
