@@ -1,15 +1,19 @@
 #include "KalmanFilter.h"
 
 KalmanFilter::KalmanFilter(){}
+KalmanFilter::KalmanFilter(int _nStates, int _nMeasurements, int _nInputs, double _dt):
+nStates(_nStates), nMeasurements(_nMeasurements), nInputs(_nInputs), dt(_dt)
+{
+    initKalmanFilter(mKalmanFilter, nStates, nMeasurements, nInputs, dt);
+}
 KalmanFilter::~KalmanFilter(){}
 
-void KalmanFilter::initKalmanFilter(cv::KalmanFilter& KF, int nStates, int nMeasurements, int nInputs, double dt)
+void KalmanFilter::initKalmanFilter()
 {
-    KF.init(nStates, nMeasurements, nInputs, CV_64F);                 // init Kalman Filter
-
-    setIdentity(KF.processNoiseCov, cv::Scalar::all(1e-5));       // set process noise
-    setIdentity(KF.measurementNoiseCov, cv::Scalar::all(1e-2));   // set measurement noise
-    setIdentity(KF.errorCovPost, cv::Scalar::all(1));             // error covariance
+    mKalmanFilter.init(nStates, nMeasurements, nInputs, CV_64F);                 // init Kalman Filter
+    setIdentity(mKalmanFilter.processNoiseCov, cv::Scalar::all(1e-5));       // set process noise
+    setIdentity(mKalmanFilter.measurementNoiseCov, cv::Scalar::all(1e-2));   // set measurement noise
+    setIdentity(mKalmanFilter.errorCovPost, cv::Scalar::all(1));             // error covariance
 
     /** DYNAMIC MODEL **/
 
@@ -33,26 +37,26 @@ void KalmanFilter::initKalmanFilter(cv::KalmanFilter& KF, int nStates, int nMeas
     //  [0 0 0  0  0  0   0   0   0 0 0 0  0  0  0   0   0   1]
 
     // position
-    KF.transitionMatrix.at<double>(0, 3) = dt;
-    KF.transitionMatrix.at<double>(1, 4) = dt;
-    KF.transitionMatrix.at<double>(2, 5) = dt;
-    KF.transitionMatrix.at<double>(3, 6) = dt;
-    KF.transitionMatrix.at<double>(4, 7) = dt;
-    KF.transitionMatrix.at<double>(5, 8) = dt;
-    KF.transitionMatrix.at<double>(0, 6) = 0.5 * pow(dt, 2);
-    KF.transitionMatrix.at<double>(1, 7) = 0.5 * pow(dt, 2);
-    KF.transitionMatrix.at<double>(2, 8) = 0.5 * pow(dt, 2);
+    mKalmanFilter.transitionMatrix.at<double>(0, 3) = dt;
+    mKalmanFilter.transitionMatrix.at<double>(1, 4) = dt;
+    mKalmanFilter.transitionMatrix.at<double>(2, 5) = dt;
+    mKalmanFilter.transitionMatrix.at<double>(3, 6) = dt;
+    mKalmanFilter.transitionMatrix.at<double>(4, 7) = dt;
+    mKalmanFilter.transitionMatrix.at<double>(5, 8) = dt;
+    mKalmanFilter.transitionMatrix.at<double>(0, 6) = 0.5 * pow(dt, 2);
+    mKalmanFilter.transitionMatrix.at<double>(1, 7) = 0.5 * pow(dt, 2);
+    mKalmanFilter.transitionMatrix.at<double>(2, 8) = 0.5 * pow(dt, 2);
 
     // orientation
-    KF.transitionMatrix.at<double>(9, 12) = dt;
-    KF.transitionMatrix.at<double>(10, 13) = dt;
-    KF.transitionMatrix.at<double>(11, 14) = dt;
-    KF.transitionMatrix.at<double>(12, 15) = dt;
-    KF.transitionMatrix.at<double>(13, 16) = dt;
-    KF.transitionMatrix.at<double>(14, 17) = dt;
-    KF.transitionMatrix.at<double>(9, 15) = 0.5 * pow(dt, 2);
-    KF.transitionMatrix.at<double>(10, 16) = 0.5 * pow(dt, 2);
-    KF.transitionMatrix.at<double>(11, 17) = 0.5 * pow(dt, 2);
+    mKalmanFilter.transitionMatrix.at<double>(9, 12) = dt;
+    mKalmanFilter.transitionMatrix.at<double>(10, 13) = dt;
+    mKalmanFilter.transitionMatrix.at<double>(11, 14) = dt;
+    mKalmanFilter.transitionMatrix.at<double>(12, 15) = dt;
+    mKalmanFilter.transitionMatrix.at<double>(13, 16) = dt;
+    mKalmanFilter.transitionMatrix.at<double>(14, 17) = dt;
+    mKalmanFilter.transitionMatrix.at<double>(9, 15) = 0.5 * pow(dt, 2);
+    mKalmanFilter.transitionMatrix.at<double>(10, 16) = 0.5 * pow(dt, 2);
+    mKalmanFilter.transitionMatrix.at<double>(11, 17) = 0.5 * pow(dt, 2);
 
 
     /** MEASUREMENT MODEL **/
@@ -64,21 +68,21 @@ void KalmanFilter::initKalmanFilter(cv::KalmanFilter& KF, int nStates, int nMeas
     //  [0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0]
     //  [0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0]
 
-    KF.measurementMatrix.at<double>(0, 0) = 1;  // x
-    KF.measurementMatrix.at<double>(1, 1) = 1;  // y
-    KF.measurementMatrix.at<double>(2, 2) = 1;  // z
-    KF.measurementMatrix.at<double>(3, 9) = 1;  // roll
-    KF.measurementMatrix.at<double>(4, 10) = 1; // pitch
-    KF.measurementMatrix.at<double>(5, 11) = 1; // yaw
+    mKalmanFilter.measurementMatrix.at<double>(0, 0) = 1;  // x
+    mKalmanFilter.measurementMatrix.at<double>(1, 1) = 1;  // y
+    mKalmanFilter.measurementMatrix.at<double>(2, 2) = 1;  // z
+    mKalmanFilter.measurementMatrix.at<double>(3, 9) = 1;  // roll
+    mKalmanFilter.measurementMatrix.at<double>(4, 10) = 1; // pitch
+    mKalmanFilter.measurementMatrix.at<double>(5, 11) = 1; // yaw
 }
 
-void KalmanFilter::updateKalmanFilter(cv::KalmanFilter& KF, cv::Mat& measurement, cv::Mat& translation_estimated, cv::Mat& rotation_estimated)
+void KalmanFilter::updateKalmanFilter(cv::Mat& translation_estimated, cv::Mat& rotation_estimated)
 {
     // First predict, to update the internal statePre variable
-    cv::Mat prediction = KF.predict();
+    cv::Mat prediction = mKalmanFilter.predict();
 
     // The "correct" phase that is going to use the predicted value and our measurement
-    cv::Mat estimated = KF.correct(measurement);
+    cv::Mat estimated = mKalmanFilter.correct(measurement);
 
     // Estimated translation
     translation_estimated.at<double>(0) = estimated.at<double>(0);
@@ -95,8 +99,9 @@ void KalmanFilter::updateKalmanFilter(cv::KalmanFilter& KF, cv::Mat& measurement
     rotation_estimated = euler2rot(eulers_estimated);
 }
 
-void KalmanFilter::fillMeasurements(cv::Mat& measurements, const cv::Mat& translation_measured, const cv::Mat& rotation_measured)
+void KalmanFilter::fillMeasurements(const cv::Mat& translation_measured, const cv::Mat& rotation_measured)
 {
+    measurements = cv::Mat::zeros(nMeasurements,1, CV_64FC1);
     // Convert rotation matrix to euler angles
     cv::Mat measured_eulers(3, 1, CV_64F);
     measured_eulers = rot2euler(rotation_measured);

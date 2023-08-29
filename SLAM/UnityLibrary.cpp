@@ -615,12 +615,92 @@ WriteLog("SetReference::End!!!!!!!!!!!!!!!!!!!");
         bReqLocalMap = true;
         //return bLocalMappingIdle;
     }
+    int DynamicObjectTracking(int id, void* posedata){
+        if(pDynaPrevFrame)
+            delete pDynaPrevFrame;
+        pDynaPrevFrame = pDynaCurrFrame;
+        pDynaCurrFrame = new DynamicFrame(gray,pCamera->K);
+
+        if(pDynaRefFrame){
+            WriteLog("test object detection");
+
+            std::chrono::high_resolution_clock::time_point s1 = std::chrono::high_resolution_clock::now();
+            int nMatchedObject = pDynamicEstimator->SearchPointsByOpticalFlow(pDynaRefFrame, pDynaCurrFrame);
+            /*
+            std::chrono::high_resolution_clock::time_point s2 = std::chrono::high_resolution_clock::now();
+            {
+                auto d = std::chrono::duration_cast<std::chrono::milliseconds>(s2 - s1).count();
+                float t = d / 1000.0;
+                std::stringstream ss;
+                ss<<"Optical flow = "<<nMatchedObject<<" "<<t<<std::endl;
+                WriteLog(ss.str());
+                ss.str("");
+                ss<<pDynaCurrFrame->imagePoints.size()<<" "<<pDynaCurrFrame->objectPoints.size()<<" "<<pDynaCurrFrame->Pose;
+                WriteLog(ss.str());
+            }
+            */
+            int nPnP = pDynamicEstimator->DynamicPoseEstimation(pDynaCurrFrame);
+            //칼만필터 업데이트도 필요함.
+            //포즈 갱신하기
+            cv::Mat P = cv::Mat(4,3, CV_32FC1, posedata);
+            cv::Mat R = pDynaCurrFrame->Pose.rowRange(0,3).colRange(0,3);
+            cv::Mat t = pDynaCurrFrame->Pose.rowRange(0,3).col(3).t();
+            R.copyTo(P.rowRange(0, 3));
+            t.copyTo(P.row(3));
+
+            /*
+            std::chrono::high_resolution_clock::time_point s3 = std::chrono::high_resolution_clock::now();
+            auto d = std::chrono::duration_cast<std::chrono::milliseconds>(s3 - s2).count();
+            float t = d / 1000.0;
+            {
+                auto d = std::chrono::duration_cast<std::chrono::milliseconds>(s3 - s2).count();
+                float t = d / 1000.0;
+                std::stringstream ss;
+                ss<<"PnP Estimation= "<<nPnP<<" "<<t<<std::endl;
+            }
+            std::stringstream ss;
+            ss<<"Localizatio=OBJ="<<id<<"="<<nMatchedObject<<" "<<nPnP<<", "<<t<<std::endl;
+            WriteLog(ss.str());
+            */
+            return nPnP;
+        }
+        return -1;
+    }
+
+    void ConvertCoordinateObjectToWorld(){
+        cv::Mat Tcw = pCurrFrame->GetPose();
+        cv::Mat Rcw = Tcw.rowRange(0, 3).colRange(0, 3);
+        cv::Mat tcw = Tcw.rowRange(0, 3).col(3);
+        cv::Mat Rwc = Rcw.t();
+        cv::Mat twc = -Rwc * tcw;
+        cv::Mat Tco = pDynaCurrFrame->Pose.clone();
+        cv::Mat Rco = Tco.rowRange(0, 3).colRange(0, 3);
+        cv::Mat tco = Tco.rowRange(0, 3).col(3);
+
+        for(int i = 0, N = pDynaCurrFrame->objectPoints.size(); i < N; i++){
+            cv::Mat objPt = cv::Mat(pDynaCurrFrame->objectPoints[i]);
+            cv::Mat camPt = Rco*objPt+tco;
+            cv::Mat worldPt = Rwc*camPt+twc;
+            pDynaCurrFrame->worldPoints.push_back(cv::Point3f(worldPt));
+        }
+    }
+
+    void UpdateDynamicObjectPoints(VECTOR3* addr, int size){
+        for(int i = 0; i < size; i++){
+            VECTOR3& tempVec = addr[i];
+            cv::Point3f objPt= pDynaCurrFrame->objectPoints[i];
+            tempVec.x = objPt.x;
+            tempVec.y = objPt.y;
+            tempVec.z = objPt.z;
+        }
+    }
 
     bool Localization(void* texdata, void* posedata, int id, double ts, int nQuality, bool bNotBase, bool bTracking, bool bVisualization){
 
         bool res = true;
 
         //유니티에서 온 프레임
+        /*
         cv::Mat ori_frame = cv::Mat(mnHeight, mnWidth, CV_8UC4, texdata);
         cv::Mat frame = ori_frame.clone();
         cv::cvtColor(frame, frame, cv::COLOR_BGRA2RGB);
@@ -630,7 +710,7 @@ WriteLog("SetReference::End!!!!!!!!!!!!!!!!!!!");
         //cv::flip(frame, frame,0);
         cv::Mat gray;
         cv::cvtColor(frame, gray, cv::COLOR_BGR2GRAY);//COLOR_BGRA2GRAY, COLOR_RGBA2GRAY
-
+        */
         bool bTrack = false;
         nMatch = -1;
         if(bTracking){
@@ -640,11 +720,6 @@ WriteLog("SetReference::End!!!!!!!!!!!!!!!!!!!");
                 delete pPrevFrame;
             pPrevFrame = pCurrFrame;
             pCurrFrame = new EdgeSLAM::Frame(gray, pCamera, id);
-
-            if(pDynaPrevFrame)
-                delete pDynaPrevFrame;
-            pDynaPrevFrame = pDynaCurrFrame;
-            pDynaCurrFrame = new DynamicFrame(gray,pCamera->K);
 
             if(!bSetReferenceFrame || !bSetLocalMap)
                 return false;
@@ -740,36 +815,7 @@ WriteLog("SetReference::End!!!!!!!!!!!!!!!!!!!");
 		    WriteLog(ss.str());
 		}
 */
-        if(pDynaRefFrame){
-            WriteLog("test object detection");
 
-            std::chrono::high_resolution_clock::time_point s1 = std::chrono::high_resolution_clock::now();
-            int nMatchedObject = pDynamicEstimator->SearchPointsByOpticalFlow(pDynaRefFrame, pDynaCurrFrame);
-            std::chrono::high_resolution_clock::time_point s2 = std::chrono::high_resolution_clock::now();
-            {
-                auto d = std::chrono::duration_cast<std::chrono::milliseconds>(s2 - s1).count();
-                float t = d / 1000.0;
-                std::stringstream ss;
-                ss<<"Optical flow = "<<nMatchedObject<<" "<<t<<std::endl;
-                WriteLog(ss.str());
-                ss.str("");
-                ss<<pDynaCurrFrame->imagePoints.size()<<" "<<pDynaCurrFrame->objectPoints.size()<<" "<<pDynaCurrFrame->Pose;
-                WriteLog(ss.str());
-            }
-            int nPnP = pDynamicEstimator->DynamicPoseEstimation(pDynaCurrFrame);
-            std::chrono::high_resolution_clock::time_point s3 = std::chrono::high_resolution_clock::now();
-            auto d = std::chrono::duration_cast<std::chrono::milliseconds>(s3 - s2).count();
-            float t = d / 1000.0;
-            {
-                auto d = std::chrono::duration_cast<std::chrono::milliseconds>(s3 - s2).count();
-                float t = d / 1000.0;
-                std::stringstream ss;
-                ss<<"PnP Estimation= "<<nPnP<<" "<<t<<std::endl;
-            }
-            std::stringstream ss;
-            ss<<"Localizatio=OBJ="<<id<<"="<<nMatchedObject<<" "<<nPnP<<", "<<t<<std::endl;
-            WriteLog(ss.str());
-        }
 
 		bool bres = bTrack;
 		//if(!bTracking){

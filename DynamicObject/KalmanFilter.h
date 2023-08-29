@@ -12,15 +12,23 @@ class KalmanFilter
 {
 public:
     KalmanFilter();
+    KalmanFilter(int _nStates, int _nMeasurements, int _nInputs, double _dt);
     virtual ~KalmanFilter();
 
 public:
-    void initKalmanFilter(cv::KalmanFilter& KF, int nStates, int nMeasurements, int nInputs, double dt);
-    void updateKalmanFilter(cv::KalmanFilter& KF, cv::Mat& measurement, cv::Mat& translation_estimated, cv::Mat& rotation_estimated);
-    void fillMeasurements(cv::Mat& measurements, const cv::Mat& translation_measured, const cv::Mat& rotation_measured);
+    void initKalmanFilter();
+    void updateKalmanFilter(cv::Mat& translation_estimated, cv::Mat& rotation_estimated);
+    void fillMeasurements(const cv::Mat& translation_measured, const cv::Mat& rotation_measured);
 private:
     cv::Mat euler2rot(const cv::Mat& euler);
     cv::Mat rot2euler(const cv::Mat& rotationMatrix);
+private:
+    cv::KalmanFilter mKalmanFilter;
+    cv::Mat measurements;
+    int nStates;
+    int nMeasuremetns;
+    int nInputs;
+    double dt;
 };
 
 #endif /* PNPPROBLEM_H_ */

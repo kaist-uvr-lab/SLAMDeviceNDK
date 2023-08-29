@@ -24,6 +24,7 @@ public:
     int mnObjectLabel;
     std::vector<cv::Point2f> imagePoints;
     std::vector<cv::Point3f> objectPoints;
+    std::vector<cv::Point3f> worldPoints;
     std::vector<bool> inliers;
     cv::Mat Pose;
     cv::Mat K;
