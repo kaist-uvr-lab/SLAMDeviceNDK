@@ -23,12 +23,16 @@ extern "C" {
     void AddObjectInfos(int id);
     void AddContentInfo(int id, float x, float y, float z);
 
+    void CreateDynamicObjectFrame(int id, float* data, int sidx);
+
     void SemanticColorInit();
     void Segmentation(int id);
 
     void TouchProcessInit(int touchID, int touchPhase, float x, float y, double ts);
     void WriteLog(std::string str, std::ios_base::openmode mode = std::ios_base::out | std::ios_base::app);
 
+    void StoreImage(int id, void* addr);
+    void EraseImage(int id);
     bool NeedNewKeyFrame(int fid);
     void NeedNewKeyFrame2(int fid);
     int CreateReferenceFrame(int id, bool bNotBase, float* data);
@@ -36,6 +40,5 @@ extern "C" {
     void UpdateLocalMap(int id, int n, void* data);
     bool Localization(void* data, void* posedata, int id, double ts, int nQuality, bool bNotBase, bool bTracking, bool bVisualization);
     float UploadData(char* data, int datalen, int id, char* ckey, int clen1, char* csrc, int clen2, double ts);
-    void* DownloadData(int id, char* ckey, int clen1, char* csrc, int clen2, int& N, float& t);
-    void ReleaseDownloadData(int id, char* ckey, int ckeylen);
+    void DownloadData(int id, char* ckey, int clen1, char* csrc, int clen2, void* addr, int& N, float& t);
 }

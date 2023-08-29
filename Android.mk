@@ -20,7 +20,11 @@ LOCAL_SRC_FILES :=	$(LOCAL_PATH)/SLAM/UnityLibrary.cpp\
 	$(LOCAL_PATH)/SLAM/PlaneProcessor.cpp\
 	$(LOCAL_PATH)/SLAM/happyhttp.cpp\
 	$(LOCAL_PATH)/SLAM/VirtualObjectProcessor.cpp\
-	$(LOCAL_PATH)/SLAM/WebAPI.cpp
+	$(LOCAL_PATH)/SLAM/WebAPI.cpp\
+	$(LOCAL_PATH)/DynamicObject/PnPProblem.cpp\
+	$(LOCAL_PATH)/DynamicObject/DynamicFrame.cpp\
+	$(LOCAL_PATH)/DynamicObject/DynamicObjectMap.cpp\
+	$(LOCAL_PATH)/DynamicObject/DynamicEstimator.cpp
 
 LOCAL_SHARED_LIBRARIES := g2o dbow3 opencv_java3
 LOCAL_CPPFLAGS  += -std=c++11

@@ -50,6 +50,7 @@ namespace EdgeSLAM {
             MapPoint* pMP = nullptr;
             if(MAP->MapPoints.Count(id)){
                 pMP = MAP->MapPoints.Get(id);
+                pMP->SetWorldPos(x,y,z);
             }else{
                 pMP = new MapPoint(id, x, y, z);
                 MAP->MapPoints.Update(id, pMP);

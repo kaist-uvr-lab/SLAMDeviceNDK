@@ -13,6 +13,8 @@
 #include "MotionModel.h"
 #include "PlaneProcessor.h"
 #include "VirtualObjectProcessor.h"
+#include "/DynamicObject/DynamicFrame.h"
+#include "/DynamicObject/DynamicEstimator.h"
 
 #include "ThreadPool.h"
 #include "ConcurrentVector.h"
@@ -33,7 +35,6 @@ extern "C" {
 
     ConcurrentDeque<EdgeSLAM::RefFrame*> dequeRefFrames;
     ConcurrentVector<EdgeSLAM::MapPoint*> LocalMapPoints;
-    ConcurrentMap<std::string, void*> mapDownloadData;
 
 	EdgeSLAM::Frame* pCurrFrame = nullptr;
 	EdgeSLAM::Frame* pPrevFrame = nullptr;
@@ -44,6 +45,11 @@ extern "C" {
 	EdgeSLAM::Tracker* pTracker;
 	EdgeSLAM::Map* pMap;
     ThreadPool::ThreadPool* POOL = nullptr;
+
+    DynamicEstimator* pDynamicEstimator = nullptr;
+    DynamicFrame* pDynaRefFrame = nullptr;
+    DynamicFrame* pDynaPrevFrame = nullptr;
+    DynamicFrame* pDynaCurrFrame = nullptr;
 
 	//std::map<int, EdgeSLAM::MapPoint*> EdgeSLAM::RefFrame::MapPoints;
 	EdgeSLAM::ORBDetector* EdgeSLAM::Tracker::Detector;
@@ -73,7 +79,6 @@ extern "C" {
 	int mnFeature, mnLevel;
 	float mfScale;
     int mnKeyFrame;
-    std::atomic<int> mnSendedID, mnLastUpdatedID;
 
     std::ifstream inFile;
     char x[1000];
@@ -203,15 +208,18 @@ extern "C" {
         EdgeSLAM::RefFrame::detector = pDetector;
         EdgeSLAM::Frame::detector = pDetector;
         EdgeSLAM::MapPoint::Detector = pDetector;
+
+        pDynamicEstimator = new DynamicEstimator();
 {
     std::stringstream ss;
     ss<<"init = "<<_d1<<", "<<_d2<<" "<<_d3<<", "<<_d4<<", "<<pCamera->bDistorted;
     WriteLog(ss.str());
 }
-
         return;
 
     }
+
+
     void DisconnectDevice(){
 
         if(pPrevFrame)
@@ -244,7 +252,6 @@ extern "C" {
         LocalMapPoints.Release();
         dequeRefFrames.Release();
         mapSendedImages.Release();
-        mapDownloadData.Release();
         ////
     }
     void ConnectDevice() {
@@ -272,10 +279,33 @@ extern "C" {
         */
         //EdgeSLAM::LocalMap::logFile = strLogFile;
         //EdgeSLAM::RefFrame::MapPoints = mapMapPoints;
-        mnLastUpdatedID = -1;
         pTracker->mTrackState = EdgeSLAM::TrackingState::NotEstimated;
         LabeledImage = cv::Mat::zeros(0,0,CV_8UC4);
 
+    }
+    cv::Mat gray;
+    void ConvertImage(int id, void* addr){
+        cv::Mat ori_frame = cv::Mat(mnHeight, mnWidth, CV_8UC4, addr);
+        cv::Mat frame = ori_frame.clone();
+        cv::cvtColor(frame, frame, cv::COLOR_BGRA2RGB);
+        frame.convertTo(frame, CV_8UC3);
+        cv::cvtColor(frame, gray, cv::COLOR_BGR2GRAY);//COLOR_BGRA2GRAY, COLOR_RGBA2GRAY
+    }
+
+    void StoreImage(int id, void* addr){
+
+        cv::Mat ori_frame = cv::Mat(mnHeight, mnWidth, CV_8UC4, addr);
+        cv::Mat frame = ori_frame.clone();
+        cv::cvtColor(frame, frame, cv::COLOR_BGRA2RGB);
+        frame.convertTo(frame, CV_8UC3);
+        cv::Mat gray;
+        cv::cvtColor(frame, gray, cv::COLOR_BGR2GRAY);//COLOR_BGRA2GRAY, COLOR_RGBA2GRAY
+        mapSendedImages.Update(id,gray.clone());
+
+    }
+    void EraseImage(int id){
+        if(mapSendedImages.Count(id))
+            mapSendedImages.Erase(id);
     }
 
     void* imuAddr;
@@ -338,33 +368,16 @@ extern "C" {
         float t = res.get();
         return t;
     }
-    void* DownloadData(int id, char* ckey, int clen1, char* csrc, int clen2, int& N, float& t){
+    void DownloadData(int id, char* ckey, int clen1, char* csrc, int clen2, void* addr, int& N, float& t){
         std::string key(ckey, clen1);
         std::string src(csrc, clen2);
-        auto res = POOL->EnqueueJob(LoadData, key, id, src);
-        auto var = res.get();
+        //auto res = POOL->EnqueueJob(LoadData, key, id, src);
+        //auto var = res.get();
+        auto var = LoadData(key,id,src);
         auto temp = std::get<0>(var);
         N = std::get<1>(var);
         t = std::get<2>(var);
-        std::stringstream ss;
-        ss<<key<<id;
-
-        void* dataptr = (void*)malloc(sizeof(float)*N);
-        memcpy(dataptr,temp.data(), sizeof(float)*N);
-        mapDownloadData.Update(ss.str(),dataptr);
-        return dataptr;
-    }
-
-    void ReleaseDownloadData(int id, char* ckey, int ckeylen){
-        std::string key(ckey, ckeylen);
-        std::stringstream ss;
-        ss<<key<<id;
-        std::string datakey = ss.str();
-        if(mapDownloadData.Count(datakey)){
-            auto ptr = mapDownloadData.Get(datakey);
-            free(ptr);
-            mapDownloadData.Erase(datakey);
-        }
+        memcpy(addr,temp.data(), sizeof(float)*N);
     }
 
     int mpid = 0;
@@ -380,52 +393,109 @@ extern "C" {
         int nDescDataSize = n*32;
         uchar* descptr = (uchar*)data+nPointDataSize;
         cv::Mat desc_data = cv::Mat(n,32,CV_8UC1,descptr);
-//WriteLog("A");
+WriteLog("UpdateLocalMap::Start");
         //std::memcpy(desc_data.data,data+nPointDataSize,nDescDataSize);
 
         std::vector<EdgeSLAM::MapPoint*> vpMPs = std::vector<EdgeSLAM::MapPoint*>(n, static_cast<EdgeSLAM::MapPoint*>(nullptr));
         for(int i = 0; i < n; i++){
             int id = (int)pts_data.at<float>(i,0);
+            cv::Mat X = pts_data.row(i).colRange(3,6);
+            EdgeSLAM::MapPoint* pMP = nullptr;
+            if(pMap->MapPoints.Count(id)){
+                pMP = pMap->MapPoints.Get(id);
+                pMP->SetWorldPos(X.at<float>(0), X.at<float>(1), X.at<float>(2));
+            }else{
+                pMP = new EdgeSLAM::MapPoint(id, X.at<float>(0), X.at<float>(1), X.at<float>(2));
+                pMap->MapPoints.Update(id, pMP);
+            }
             float minDist = pts_data.at<float>(i,1);
             float maxDist = pts_data.at<float>(i,2);
-            cv::Mat X = pts_data.row(i).colRange(3,6);
             cv::Mat norm = pts_data.row(i).colRange(6,9).t();
-            cv::Mat desc = desc_data.row(i).clone();
-            int pid = ++mpid;
-            auto pMP = new EdgeSLAM::MapPoint(pid, X.at<float>(0), X.at<float>(1), X.at<float>(2));
+            cv::Mat desc = desc_data.row(i);
             pMP->SetMapPointInfo(minDist,maxDist,norm);
             pMP->SetDescriptor(desc);
             vpMPs[i] = pMP;
         }
 //WriteLog("B");
+        //auto prevMPs = LocalMapPoints.get();
         LocalMapPoints.set(vpMPs);
         if(!bSetLocalMap){
             bSetLocalMap = true;
         }
-//WriteLog("C");
+
+WriteLog("UpdateLocalMap::End");
         bReqLocalMap = false;
         nLastKeyFrameId = id;
     }
     int CreateReferenceFrame2(int id, float* data){
         return -1;
     }
+
+    void CreateDynamicObjectFrame(int id, float* data, int startIdx){
+        if(!mapSendedImages.Count(id))
+            return;
+
+        float* fdata = data+startIdx+1;
+        //int Ndatasize = (int)fdata[0];
+        int Nobject = (int)fdata[0];
+        //2 3 4
+        //5 6 7
+        //8 9 10
+        //11 12 13
+        cv::Mat P = cv::Mat::eye(4,4,CV_32FC1);
+        P.at<float>(0, 0) = fdata[1];
+        P.at<float>(0, 1) = fdata[2];
+        P.at<float>(0, 2) = fdata[3];
+        P.at<float>(1, 0) = fdata[4];
+        P.at<float>(1, 1) = fdata[5];
+        P.at<float>(1, 2) = fdata[6];
+        P.at<float>(2, 0) = fdata[7];
+        P.at<float>(2, 1) = fdata[8];
+        P.at<float>(2, 2) = fdata[9];
+        P.at<float>(0, 3) = fdata[10];
+        P.at<float>(1, 3) = fdata[11];
+        P.at<float>(2, 3) = fdata[12];
+
+        int idx = 13;
+        std::vector<cv::Point2f> imagePoints;
+        std::vector<cv::Point3f> objectPoints;
+        for(int i = 0; i < Nobject; i++){
+            float x = fdata[idx++];
+            float y = fdata[idx++];
+            float X = fdata[idx++];
+            float Y = fdata[idx++];
+            float Z = fdata[idx++];
+            cv::Point2f imgPt(x,y);
+            cv::Point3f objPt(X,Y,Z);
+            imagePoints.push_back(imgPt);
+            objectPoints.push_back(objPt);
+        }
+        cv::Mat img = mapSendedImages.Get(id);
+        if(pDynaRefFrame)
+            delete pDynaRefFrame;
+        pDynaRefFrame = new DynamicFrame(img, imagePoints, objectPoints, P, pCamera->K);
+
+        std::stringstream ss;
+        ss<<"Object Frame Test = "<<" "<<Nobject<<pDynaRefFrame->Pose;
+        WriteLog(ss.str());
+
+    }
+
     int CreateReferenceFrame(int id, bool bNotBase, float* data){
     //void CreateReferenceFrame(int id, const cv::Mat& data){
-        //WriteLog("SetReference::Start!!!!!!!!!!!!!!!!!!!!!!!!!!!!");//, std::ios::trunc
-        //cv::Mat f1 = GetDataFromUnity("ReferenceFrame");
-        //ReleaseUnityData("ReferenceFrame");
+        WriteLog("SetReference::Start!!!!!!!!!!!!!!!!!!!!!!!!!!!!");//, std::ios::trunc
         float* tdata = data;
-        int N = (int)tdata[0];
+        int N = (int)tdata[1];
 
+        //무조건 빼내야 하는 것임.
+        if(!mapSendedImages.Count(id))
+            return dequeRefFrames.size();
+        cv::Mat img = mapSendedImages.Get(id);
+
+//WriteLog("GetFrame");
         if(N > 30){
-//WriteLog("CreateReference Start");
-            auto pRefFrame = new EdgeSLAM::RefFrame(pCamera, tdata);
-
-            if(!mapSendedImages.Count(id))
-                return dequeRefFrames.size();
-            cv::Mat img = mapSendedImages.Get(id);
-            mapSendedImages.Erase(id);
-
+WriteLog("CreateReference Start");
+            auto pRefFrame = new EdgeSLAM::RefFrame(pCamera, tdata+1);
             pDetector->Compute(img, cv::Mat(), pRefFrame->mvKeys, pRefFrame->mDescriptors);
             //std::vector<cv::Mat> vCurrentDesc = Utils::toDescriptorVector(pRefFrame->mDescriptors);
             //pVoc->transform(vCurrentDesc, pRefFrame->mBowVec, pRefFrame->mFeatVec, 4);
@@ -482,7 +552,7 @@ extern "C" {
                 }
             }
 
-            //WriteLog("Reference::UpdateLocalMap::End");
+WriteLog("Reference::UpdateLocalMap::End");
             pMap->SetReferenceFrame(pRefFrame);
             if(!bSetReferenceFrame){
                 bSetReferenceFrame = true;
@@ -492,7 +562,7 @@ extern "C" {
             //f1.release();
         }
 
-        //WriteLog("SetReference::End!!!!!!!!!!!!!!!!!!!");
+WriteLog("SetReference::End!!!!!!!!!!!!!!!!!!!");
         return N;
     }
 
@@ -546,7 +616,6 @@ extern "C" {
         //return bLocalMappingIdle;
     }
 
-
     bool Localization(void* texdata, void* posedata, int id, double ts, int nQuality, bool bNotBase, bool bTracking, bool bVisualization){
 
         bool res = true;
@@ -561,17 +630,7 @@ extern "C" {
         //cv::flip(frame, frame,0);
         cv::Mat gray;
         cv::cvtColor(frame, gray, cv::COLOR_BGR2GRAY);//COLOR_BGRA2GRAY, COLOR_RGBA2GRAY
-//WriteLog("1");
-        if(id % mnSkipFrame == 0)
-        {
-            //POOL->EnqueueJob(SendImage, id, ts, nQuality, frame);
-            mapSendedImages.Update(id,gray.clone());
-            mnSendedID = id;
-        }
 
-        ////이 위 까지는 서버 전송을 위해 무조건 동작해야 함.
-
-//WriteLog("2");
         bool bTrack = false;
         nMatch = -1;
         if(bTracking){
@@ -581,7 +640,12 @@ extern "C" {
                 delete pPrevFrame;
             pPrevFrame = pCurrFrame;
             pCurrFrame = new EdgeSLAM::Frame(gray, pCamera, id);
-//WriteLog("3");
+
+            if(pDynaPrevFrame)
+                delete pDynaPrevFrame;
+            pDynaPrevFrame = pDynaCurrFrame;
+            pDynaCurrFrame = new DynamicFrame(gray,pCamera->K);
+
             if(!bSetReferenceFrame || !bSetLocalMap)
                 return false;
 //WriteLog("LOCALIZATION START");
@@ -596,7 +660,7 @@ extern "C" {
                     }
                 }
             }
-
+//WriteLog("LOCALIZATION::TrackWithPrevFrame");
             if (pTracker->mTrackState == EdgeSLAM::TrackingState::Success) {
                 //predict
                 if(bIMU){
@@ -627,11 +691,9 @@ extern "C" {
             if (bTrack) {
                 auto vecLocalMPs = LocalMapPoints.get();
                 nMatch = 4;
-                //WriteLog("Localization::TrackLocalMap::Start");
-//WriteLog("2:a");
+//WriteLog("Localization::TrackLocalMap::Start");
                 nMatch = pTracker->TrackWithLocalMap(pCurrFrame, vecLocalMPs, 100.0, 50.0);
-//WriteLog("2:b");
-                //WriteLog("Localization::TrackLocalMap::End");
+//WriteLog("Localization::TrackLocalMap::End");
                 if (pCurrFrame->mnFrameID < pTracker->mnLastRelocFrameId + 30 && nMatch < 30) {
                     bTrack = false;
                 }
@@ -668,52 +730,57 @@ extern "C" {
 
             }
 //WriteLog("4");
-            /*
-            if (bTrack) {
-
-                cv::Mat T = pCurrFrame->GetPose();
-                cv::Mat R = T.colRange(0, 3).rowRange(0, 3);
-                cv::Mat t = T.col(3).rowRange(0, 3);
-                cv::Mat K = pCamera->K.clone();
-
-                {
-                    std::stringstream ss;
-                    ss<<T<<K<<std::endl;
-                    WriteLog(ss.str());
-                }
-
-                for (int i = 0; i < pCurrFrame->mvKeys.size(); i++) {
-                    auto pMP = pCurrFrame->mvpMapPoints[i];
-                    int r = 2;
-                    if (pMP && !pMP->isBad())
-                    {
-                        cv::Mat x3D = pMP->GetWorldPos();
-                        cv::Mat proj= K*(R*x3D + t);
-                        float d = proj.at<float>(2);
-                        cv::Point2f pt(proj.at<float>(0) / d, proj.at<float>(1) / d);
-                        cv::circle(frame, pt, r, cv::Scalar(255,0,255), -1);
-                    }
-                }//for frame
-
-                std::stringstream ss;
-                ss<<strPath<<"/color.jpg";
-                cv::imwrite(ss.str(), frame);
-            }//if
-            */
         }
-//WriteLog("7");
+//WriteLog("Localization::End");
 
-		/*
+/*
 		{
 		    std::stringstream ss;
-		    ss<<"Localizatio="<<id<<"="<<nMatch<<", "<<t<<std::endl;
+		    ss<<"Localizatio="<<id<<"="<<nMatch<<", "<<std::endl;
 		    WriteLog(ss.str());
 		}
-		*/
+*/
+        if(pDynaRefFrame){
+            WriteLog("test object detection");
+
+            std::chrono::high_resolution_clock::time_point s1 = std::chrono::high_resolution_clock::now();
+            int nMatchedObject = pDynamicEstimator->SearchPointsByOpticalFlow(pDynaRefFrame, pDynaCurrFrame);
+            std::chrono::high_resolution_clock::time_point s2 = std::chrono::high_resolution_clock::now();
+            {
+                auto d = std::chrono::duration_cast<std::chrono::milliseconds>(s2 - s1).count();
+                float t = d / 1000.0;
+                std::stringstream ss;
+                ss<<"Optical flow = "<<nMatchedObject<<" "<<t<<std::endl;
+                WriteLog(ss.str());
+                ss.str("");
+                ss<<pDynaCurrFrame->imagePoints.size()<<" "<<pDynaCurrFrame->objectPoints.size()<<" "<<pDynaCurrFrame->Pose;
+                WriteLog(ss.str());
+            }
+            int nPnP = pDynamicEstimator->DynamicPoseEstimation(pDynaCurrFrame);
+            std::chrono::high_resolution_clock::time_point s3 = std::chrono::high_resolution_clock::now();
+            auto d = std::chrono::duration_cast<std::chrono::milliseconds>(s3 - s2).count();
+            float t = d / 1000.0;
+            {
+                auto d = std::chrono::duration_cast<std::chrono::milliseconds>(s3 - s2).count();
+                float t = d / 1000.0;
+                std::stringstream ss;
+                ss<<"PnP Estimation= "<<nPnP<<" "<<t<<std::endl;
+            }
+            std::stringstream ss;
+            ss<<"Localizatio=OBJ="<<id<<"="<<nMatchedObject<<" "<<nPnP<<", "<<t<<std::endl;
+            WriteLog(ss.str());
+        }
+
 		bool bres = bTrack;
 		//if(!bTracking){
         //    bres = bResReference;
 		//}
         return bres;
     }
+    /*
+    bool Localization(void* texdata, void* posedata, int id, double ts, int nQuality, bool bNotBase, bool bTracking, bool bVisualization){
+        POOL->EnqueueJob(_Localization, texdata, posedata, id, ts, nQuality, bNotBase, bTracking, bVisualization);
+        return true;
+    }
+    */
 }
