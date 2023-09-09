@@ -26,7 +26,7 @@ private:
     cv::KalmanFilter mKalmanFilter;
     cv::Mat measurements;
     int nStates;
-    int nMeasuremetns;
+    int nMeasurements;
     int nInputs;
     double dt;
 };

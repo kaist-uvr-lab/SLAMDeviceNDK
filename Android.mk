@@ -22,6 +22,7 @@ LOCAL_SRC_FILES :=	$(LOCAL_PATH)/SLAM/UnityLibrary.cpp\
 	$(LOCAL_PATH)/SLAM/VirtualObjectProcessor.cpp\
 	$(LOCAL_PATH)/SLAM/WebAPI.cpp\
 	$(LOCAL_PATH)/DynamicObject/PnPProblem.cpp\
+	$(LOCAL_PATH)/DynamicObject/KalmanFilter.cpp\
 	$(LOCAL_PATH)/DynamicObject/DynamicFrame.cpp\
 	$(LOCAL_PATH)/DynamicObject/DynamicObjectMap.cpp\
 	$(LOCAL_PATH)/DynamicObject/DynamicEstimator.cpp

@@ -26,7 +26,7 @@ public:
     std::vector<cv::Point3f> objectPoints;
     std::vector<cv::Point3f> worldPoints;
     std::vector<bool> inliers;
-    cv::Mat Pose;
+    cv::Mat Pco;
     cv::Mat K;
 private:
     //2f

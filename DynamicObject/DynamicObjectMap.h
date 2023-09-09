@@ -5,16 +5,23 @@
 #include <iostream>
 #include <opencv2/core/core.hpp>
 #include <opencv2/highgui/highgui.hpp>
+#include <mutex>
 
-class DynamicFrame;
+class KalmanFilter;
 
 class DynamicObjectMap
 {
 public:
     DynamicObjectMap();
     virtual ~DynamicObjectMap();
-
+public:
+    void SetPose(cv::Mat aP);
+    cv::Mat GetPose();
+public:
+    KalmanFilter* mpKalmanFilter;
 private:
+    std::mutex mMutexPose;
+    cv::Mat P;
 
 };
 

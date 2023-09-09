@@ -39,7 +39,6 @@ int DynamicEstimator::SearchPointsByOpticalFlow(DynamicFrame* pRef, DynamicFrame
         pCur->inliers.push_back(true);
         nGood++;
     }
-    pCur->Pose = pRef->Pose.clone();
     return nGood;
 }
 int DynamicEstimator::DynamicPoseEstimation(DynamicFrame* pCur){
@@ -57,18 +56,24 @@ int DynamicEstimator::DynamicPoseEstimation(DynamicFrame* pCur){
     cv::Mat measurements(nMeasurements, 1, CV_64FC1); measurements.setTo(cv::Scalar(0));
     bool good_measurement = false;
 
-    cv::Mat R = pCur->Pose.rowRange(0, 3).colRange(0, 3);
-    cv::Mat t = pCur->Pose.rowRange(0, 3).col(3);
+    cv::Mat Rco = pCur->Pco.rowRange(0, 3).colRange(0, 3);
+    cv::Mat tco = pCur->Pco.rowRange(0, 3).col(3);
     cv::Mat rvec = cv::Mat::zeros(3, 1, CV_64FC1);
     cv::Mat tvec = cv::Mat::zeros(3, 1, CV_64FC1);
-    cv::Rodrigues(R, rvec);
+    cv::Rodrigues(Rco, rvec);
     rvec.convertTo(rvec, CV_64FC1);
-    t.convertTo(tvec, CV_64FC1);
+    tco.convertTo(tvec, CV_64FC1);
 
     // -- Step 3: Estimate the pose using RANSAC approach
     cv::Mat inliers_idx;
     pPnPSolver->estimatePoseRANSAC(pCur->objectPoints, pCur->imagePoints,
         pCur->K, rvec, tvec, pnpMethod, inliers_idx,
         iterationsCount, reprojectionError, confidence, true);
+
+    cv::Mat Pco = cv::Mat::eye(4,4,CV_64FC1);;
+    cv::Rodrigues(rvec, Rco);
+    Rco.copyTo(Pco.rowRange(0, 3).colRange(0, 3));
+    tvec.copyTo(Pco.rowRange(0, 3).col(3));
+    Pco.convertTo(pCur->Pco, CV_32FC1);
     return inliers_idx.rows;
 }

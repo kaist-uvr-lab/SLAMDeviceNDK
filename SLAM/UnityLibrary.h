@@ -37,7 +37,6 @@ extern "C" {
     void TouchProcessInit(int touchID, int touchPhase, float x, float y, double ts);
     void WriteLog(std::string str, std::ios_base::openmode mode = std::ios_base::out | std::ios_base::app);
 
-    void ConvertCoordinateObjectToWorld();
     void UpdateDynamicObjectPoints(VECTOR3* addr, int size);
     void ConvertImage(int id, void* addr);
     void StoreImage(int id, void* addr);
@@ -47,7 +46,7 @@ extern "C" {
     int CreateReferenceFrame(int id, bool bNotBase, float* data);
     int CreateReferenceFrame2(int id, float* data);
     void UpdateLocalMap(int id, int n, void* data);
-    int DynamicObjectTracking(int id, void* posedata);
+    int DynamicObjectTracking(int id, void* posedata, void* oposedata);
     bool Localization(void* data, void* posedata, int id, double ts, int nQuality, bool bNotBase, bool bTracking, bool bVisualization);
     float UploadData(char* data, int datalen, int id, char* ckey, int clen1, char* csrc, int clen2, double ts);
     void DownloadData(int id, char* ckey, int clen1, char* csrc, int clen2, void* addr, int& N, float& t);

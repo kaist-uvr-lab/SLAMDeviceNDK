@@ -13,6 +13,7 @@
 #include "MotionModel.h"
 #include "PlaneProcessor.h"
 #include "VirtualObjectProcessor.h"
+#include "/DynamicObject/DynamicObjectMap.h"
 #include "/DynamicObject/DynamicFrame.h"
 #include "/DynamicObject/DynamicEstimator.h"
 
@@ -35,6 +36,7 @@ extern "C" {
 
     ConcurrentDeque<EdgeSLAM::RefFrame*> dequeRefFrames;
     ConcurrentVector<EdgeSLAM::MapPoint*> LocalMapPoints;
+    ConcurrentMap<int, DynamicObjectMap*> LocalObjectMap;
 
 	EdgeSLAM::Frame* pCurrFrame = nullptr;
 	EdgeSLAM::Frame* pPrevFrame = nullptr;
@@ -438,25 +440,34 @@ WriteLog("UpdateLocalMap::End");
         float* fdata = data+startIdx+1;
         //int Ndatasize = (int)fdata[0];
         int Nobject = (int)fdata[0];
+        int nObjID = (int)fdata[1];
         //2 3 4
         //5 6 7
         //8 9 10
         //11 12 13
-        cv::Mat P = cv::Mat::eye(4,4,CV_32FC1);
-        P.at<float>(0, 0) = fdata[1];
-        P.at<float>(0, 1) = fdata[2];
-        P.at<float>(0, 2) = fdata[3];
-        P.at<float>(1, 0) = fdata[4];
-        P.at<float>(1, 1) = fdata[5];
-        P.at<float>(1, 2) = fdata[6];
-        P.at<float>(2, 0) = fdata[7];
-        P.at<float>(2, 1) = fdata[8];
-        P.at<float>(2, 2) = fdata[9];
-        P.at<float>(0, 3) = fdata[10];
-        P.at<float>(1, 3) = fdata[11];
-        P.at<float>(2, 3) = fdata[12];
+        cv::Mat Pwo = cv::Mat::eye(4,4,CV_32FC1);
+        Pwo.at<float>(0, 0) = fdata[2];
+        Pwo.at<float>(0, 1) = fdata[3];
+        Pwo.at<float>(0, 2) = fdata[4];
+        Pwo.at<float>(1, 0) = fdata[5];
+        Pwo.at<float>(1, 1) = fdata[6];
+        Pwo.at<float>(1, 2) = fdata[7];
+        Pwo.at<float>(2, 0) = fdata[8];
+        Pwo.at<float>(2, 1) = fdata[9];
+        Pwo.at<float>(2, 2) = fdata[10];
+        Pwo.at<float>(0, 3) = fdata[11];
+        Pwo.at<float>(1, 3) = fdata[12];
+        Pwo.at<float>(2, 3) = fdata[13];
 
-        int idx = 13;
+        DynamicObjectMap* pObj = nullptr;
+        if(!LocalObjectMap.Count(nObjID)){
+            pObj = new DynamicObjectMap();
+            LocalObjectMap.Update(nObjID, pObj);
+        }else
+            pObj = LocalObjectMap.Get(nObjID);
+        pObj->SetPose(Pwo);
+
+        int idx = 14;
         std::vector<cv::Point2f> imagePoints;
         std::vector<cv::Point3f> objectPoints;
         for(int i = 0; i < Nobject; i++){
@@ -473,10 +484,10 @@ WriteLog("UpdateLocalMap::End");
         cv::Mat img = mapSendedImages.Get(id);
         if(pDynaRefFrame)
             delete pDynaRefFrame;
-        pDynaRefFrame = new DynamicFrame(img, imagePoints, objectPoints, P, pCamera->K);
+        pDynaRefFrame = new DynamicFrame(img, imagePoints, objectPoints, Pwo, pCamera->K);
 
         std::stringstream ss;
-        ss<<"Object Frame Test = "<<" "<<Nobject<<pDynaRefFrame->Pose;
+        ss<<"Object Frame Test = "<<" "<<Nobject<<" "<<pDynaRefFrame->Pco;
         WriteLog(ss.str());
 
     }
@@ -615,7 +626,7 @@ WriteLog("SetReference::End!!!!!!!!!!!!!!!!!!!");
         bReqLocalMap = true;
         //return bLocalMappingIdle;
     }
-    int DynamicObjectTracking(int id, void* posedata){
+    int DynamicObjectTracking(int id, void* posedata, void* oposedata){
         if(pDynaPrevFrame)
             delete pDynaPrevFrame;
         pDynaPrevFrame = pDynaCurrFrame;
@@ -639,14 +650,27 @@ WriteLog("SetReference::End!!!!!!!!!!!!!!!!!!!");
                 WriteLog(ss.str());
             }
             */
-            int nPnP = pDynamicEstimator->DynamicPoseEstimation(pDynaCurrFrame);
-            //칼만필터 업데이트도 필요함.
-            //포즈 갱신하기
-            cv::Mat P = cv::Mat(4,3, CV_32FC1, posedata);
-            cv::Mat R = pDynaCurrFrame->Pose.rowRange(0,3).colRange(0,3);
-            cv::Mat t = pDynaCurrFrame->Pose.rowRange(0,3).col(3).t();
-            R.copyTo(P.rowRange(0, 3));
-            t.copyTo(P.row(3));
+
+            cv::Mat Ptcw = cv::Mat(4,3, CV_32FC1, posedata);
+            cv::Mat Rcw = Ptcw.rowRange(0,3).colRange(0,3);
+            cv::Mat tcw = Ptcw.row(3).t();
+            cv::Mat Pcw = cv::Mat::eye(4,4,CV_32FC1);
+            Rcw.copyTo(Pcw.rowRange(0,3).colRange(0,3));
+            tcw.copyTo(Pcw.rowRange(0,3).col(3));
+            pDynaCurrFrame->Pco = Pcw * pDynaRefFrame->Pco;
+
+            int nPnP = 0;
+            if(nMatchedObject>10){
+                 nPnP = pDynamicEstimator->DynamicPoseEstimation(pDynaCurrFrame);
+                //칼만필터 업데이트도 필요함.
+                //포즈 갱신하기
+            }
+
+            cv::Mat Pco = cv::Mat(4,3, CV_32FC1, oposedata);
+            cv::Mat Rco = pDynaCurrFrame->Pco.rowRange(0,3).colRange(0,3);
+            cv::Mat tco = pDynaCurrFrame->Pco.rowRange(0,3).col(3).t();
+            Rco.copyTo(Pco.rowRange(0, 3));
+            tco.copyTo(Pco.row(3));
 
             /*
             std::chrono::high_resolution_clock::time_point s3 = std::chrono::high_resolution_clock::now();
@@ -665,24 +689,6 @@ WriteLog("SetReference::End!!!!!!!!!!!!!!!!!!!");
             return nPnP;
         }
         return -1;
-    }
-
-    void ConvertCoordinateObjectToWorld(){
-        cv::Mat Tcw = pCurrFrame->GetPose();
-        cv::Mat Rcw = Tcw.rowRange(0, 3).colRange(0, 3);
-        cv::Mat tcw = Tcw.rowRange(0, 3).col(3);
-        cv::Mat Rwc = Rcw.t();
-        cv::Mat twc = -Rwc * tcw;
-        cv::Mat Tco = pDynaCurrFrame->Pose.clone();
-        cv::Mat Rco = Tco.rowRange(0, 3).colRange(0, 3);
-        cv::Mat tco = Tco.rowRange(0, 3).col(3);
-
-        for(int i = 0, N = pDynaCurrFrame->objectPoints.size(); i < N; i++){
-            cv::Mat objPt = cv::Mat(pDynaCurrFrame->objectPoints[i]);
-            cv::Mat camPt = Rco*objPt+tco;
-            cv::Mat worldPt = Rwc*camPt+twc;
-            pDynaCurrFrame->worldPoints.push_back(cv::Point3f(worldPt));
-        }
     }
 
     void UpdateDynamicObjectPoints(VECTOR3* addr, int size){

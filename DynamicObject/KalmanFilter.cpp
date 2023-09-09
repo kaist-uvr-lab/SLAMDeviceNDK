@@ -4,7 +4,7 @@ KalmanFilter::KalmanFilter(){}
 KalmanFilter::KalmanFilter(int _nStates, int _nMeasurements, int _nInputs, double _dt):
 nStates(_nStates), nMeasurements(_nMeasurements), nInputs(_nInputs), dt(_dt)
 {
-    initKalmanFilter(mKalmanFilter, nStates, nMeasurements, nInputs, dt);
+    initKalmanFilter();
 }
 KalmanFilter::~KalmanFilter(){}
 
@@ -82,7 +82,7 @@ void KalmanFilter::updateKalmanFilter(cv::Mat& translation_estimated, cv::Mat& r
     cv::Mat prediction = mKalmanFilter.predict();
 
     // The "correct" phase that is going to use the predicted value and our measurement
-    cv::Mat estimated = mKalmanFilter.correct(measurement);
+    cv::Mat estimated = mKalmanFilter.correct(measurements);
 
     // Estimated translation
     translation_estimated.at<double>(0) = estimated.at<double>(0);
