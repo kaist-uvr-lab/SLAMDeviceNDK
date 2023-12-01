@@ -12,7 +12,7 @@ class DynamicFrame
 public:
     DynamicFrame();
     DynamicFrame(const cv::Mat& _img, const cv::Mat& _K);
-    DynamicFrame(const cv::Mat& _img, std::vector<cv::Point2f>& _imgPts, std::vector<cv::Point3f>& _objPts, const cv::Mat& _Pose, const cv::Mat& _K);
+    DynamicFrame(int id, const cv::Mat& _img, std::vector<cv::Point2f>& _imgPts, std::vector<cv::Point3f>& _objPts, const cv::Mat& _Pose, const cv::Mat& _K);
     virtual ~DynamicFrame();
 
     //frame id

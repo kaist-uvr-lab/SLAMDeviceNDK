@@ -446,18 +446,18 @@ WriteLog("UpdateLocalMap::End");
         //8 9 10
         //11 12 13
         cv::Mat Pwo = cv::Mat::eye(4,4,CV_32FC1);
-        Pwo.at<float>(0, 0) = fdata[2];
-        Pwo.at<float>(0, 1) = fdata[3];
-        Pwo.at<float>(0, 2) = fdata[4];
-        Pwo.at<float>(1, 0) = fdata[5];
-        Pwo.at<float>(1, 1) = fdata[6];
-        Pwo.at<float>(1, 2) = fdata[7];
-        Pwo.at<float>(2, 0) = fdata[8];
-        Pwo.at<float>(2, 1) = fdata[9];
-        Pwo.at<float>(2, 2) = fdata[10];
-        Pwo.at<float>(0, 3) = fdata[11];
-        Pwo.at<float>(1, 3) = fdata[12];
-        Pwo.at<float>(2, 3) = fdata[13];
+        Pwo.at<float>(0, 0) = fdata[5];
+        Pwo.at<float>(0, 1) = fdata[6];
+        Pwo.at<float>(0, 2) = fdata[7];
+        Pwo.at<float>(1, 0) = fdata[8];
+        Pwo.at<float>(1, 1) = fdata[9];
+        Pwo.at<float>(1, 2) = fdata[10];
+        Pwo.at<float>(2, 0) = fdata[11];
+        Pwo.at<float>(2, 1) = fdata[12];
+        Pwo.at<float>(2, 2) = fdata[13];
+        Pwo.at<float>(0, 3) = fdata[14];
+        Pwo.at<float>(1, 3) = fdata[15];
+        Pwo.at<float>(2, 3) = fdata[16];
 
         DynamicObjectMap* pObj = nullptr;
         if(!LocalObjectMap.Count(nObjID)){
@@ -467,7 +467,7 @@ WriteLog("UpdateLocalMap::End");
             pObj = LocalObjectMap.Get(nObjID);
         pObj->SetPose(Pwo);
 
-        int idx = 14;
+        int idx = 17;
         std::vector<cv::Point2f> imagePoints;
         std::vector<cv::Point3f> objectPoints;
         for(int i = 0; i < Nobject; i++){
@@ -484,7 +484,7 @@ WriteLog("UpdateLocalMap::End");
         cv::Mat img = mapSendedImages.Get(id);
         if(pDynaRefFrame)
             delete pDynaRefFrame;
-        pDynaRefFrame = new DynamicFrame(img, imagePoints, objectPoints, Pwo, pCamera->K);
+        pDynaRefFrame = new DynamicFrame(nObjID, img, imagePoints, objectPoints, Pwo, pCamera->K);
 
         std::stringstream ss;
         ss<<"Object Frame Test = "<<" "<<Nobject<<" "<<pDynaRefFrame->Pco;
@@ -496,7 +496,7 @@ WriteLog("UpdateLocalMap::End");
     //void CreateReferenceFrame(int id, const cv::Mat& data){
         WriteLog("SetReference::Start!!!!!!!!!!!!!!!!!!!!!!!!!!!!");//, std::ios::trunc
         float* tdata = data;
-        int N = (int)tdata[1];
+        int N = (int)tdata[2];
 
         //무조건 빼내야 하는 것임.
         if(!mapSendedImages.Count(id))
@@ -506,7 +506,7 @@ WriteLog("UpdateLocalMap::End");
 //WriteLog("GetFrame");
         if(N > 30){
 WriteLog("CreateReference Start");
-            auto pRefFrame = new EdgeSLAM::RefFrame(pCamera, tdata+1);
+            auto pRefFrame = new EdgeSLAM::RefFrame(pCamera, tdata+2);
             pDetector->Compute(img, cv::Mat(), pRefFrame->mvKeys, pRefFrame->mDescriptors);
             //std::vector<cv::Mat> vCurrentDesc = Utils::toDescriptorVector(pRefFrame->mDescriptors);
             //pVoc->transform(vCurrentDesc, pRefFrame->mBowVec, pRefFrame->mFeatVec, 4);
@@ -626,7 +626,7 @@ WriteLog("SetReference::End!!!!!!!!!!!!!!!!!!!");
         bReqLocalMap = true;
         //return bLocalMappingIdle;
     }
-    int DynamicObjectTracking(int id, void* posedata, void* oposedata){
+    int DynamicObjectTracking(int id, int &objID, void* posedata, void* oposedata){
         if(pDynaPrevFrame)
             delete pDynaPrevFrame;
         pDynaPrevFrame = pDynaCurrFrame;
@@ -665,7 +665,7 @@ WriteLog("SetReference::End!!!!!!!!!!!!!!!!!!!");
                 //칼만필터 업데이트도 필요함.
                 //포즈 갱신하기
             }
-
+            objID = pDynaRefFrame->mnObjectId;
             cv::Mat Pco = cv::Mat(4,3, CV_32FC1, oposedata);
             cv::Mat Rco = pDynaCurrFrame->Pco.rowRange(0,3).colRange(0,3);
             cv::Mat tco = pDynaCurrFrame->Pco.rowRange(0,3).col(3).t();
