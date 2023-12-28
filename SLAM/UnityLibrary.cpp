@@ -386,22 +386,44 @@ extern "C" {
     const int mpInfoSize = 36; //id + 3d + min+max+normal
     const int nNumElement = mpInfoSize/4;
 
-    void UpdateLocalMap(int id, int n, void* data){
+    void UpdateLocalMap(int id, float* data){
 
-        //pts
-        int nPointDataSize = n*mpInfoSize;
-        cv::Mat pts_data = cv::Mat(n,nNumElement,CV_32FC1,data);
-        //desc
-        int nDescDataSize = n*32;
-        uchar* descptr = (uchar*)data+nPointDataSize;
-        cv::Mat desc_data = cv::Mat(n,32,CV_8UC1,descptr);
-WriteLog("UpdateLocalMap::Start");
-        //std::memcpy(desc_data.data,data+nPointDataSize,nDescDataSize);
+        WriteLog("UpdateLocalMap::Start");
+        int nSize = (int)data[0];
+        if(nSize ==2){
+            WriteLog("Not Updated LocalMap");
+            return;
+        }
+        int nLocalMap = (int)data[2];
+        int nObsIdx = 3;
+        int nUpdatedMPs =(int)data[nObsIdx+nLocalMap];
+        int nUpdatedIdx = nObsIdx+nLocalMap+1;
 
-        std::vector<EdgeSLAM::MapPoint*> vpMPs = std::vector<EdgeSLAM::MapPoint*>(n, static_cast<EdgeSLAM::MapPoint*>(nullptr));
-        for(int i = 0; i < n; i++){
-            int id = (int)pts_data.at<float>(i,0);
-            cv::Mat X = pts_data.row(i).colRange(3,6);
+        std::vector<EdgeSLAM::MapPoint*> vpMPs;// = std::vector<EdgeSLAM::MapPoint*>(n, static_cast<EdgeSLAM::MapPoint*>(nullptr));
+
+        for(int i = 0; i < nUpdatedMPs; i++){
+
+            int id = (int)data[nUpdatedIdx++];
+            float minDist = data[nUpdatedIdx++];
+            float maxDist = data[nUpdatedIdx++];
+
+            //Xw
+            float x = data[nUpdatedIdx++];
+            float y = data[nUpdatedIdx++];
+            float z = data[nUpdatedIdx++];
+            cv::Mat X = (cv::Mat_<float>(3, 1) <<  x,y,z);
+
+            //normal
+            float nx = data[nUpdatedIdx++];
+            float ny = data[nUpdatedIdx++];
+            float nz = data[nUpdatedIdx++];
+            cv::Mat norm = (cv::Mat_<float>(3, 1) << nx,ny,nz);
+
+            //desc
+            void* ptrdesc = data+nUpdatedIdx;
+            nUpdatedIdx+=8;
+            cv::Mat desc(1,32,CV_8UC1,ptrdesc);
+
             EdgeSLAM::MapPoint* pMP = nullptr;
             if(pMap->MapPoints.Count(id)){
                 pMP = pMap->MapPoints.Get(id);
@@ -410,13 +432,27 @@ WriteLog("UpdateLocalMap::Start");
                 pMP = new EdgeSLAM::MapPoint(id, X.at<float>(0), X.at<float>(1), X.at<float>(2));
                 pMap->MapPoints.Update(id, pMP);
             }
-            float minDist = pts_data.at<float>(i,1);
-            float maxDist = pts_data.at<float>(i,2);
-            cv::Mat norm = pts_data.row(i).colRange(6,9).t();
-            cv::Mat desc = desc_data.row(i);
             pMP->SetMapPointInfo(minDist,maxDist,norm);
             pMP->SetDescriptor(desc);
-            vpMPs[i] = pMP;
+
+        }
+
+        int nError = 0;
+        //add not updated mps
+        for(int i = 0; i < nLocalMap; i++){
+            int id = (int)data[nObsIdx++];
+
+            EdgeSLAM::MapPoint* pMP = nullptr;
+            if(pMap->MapPoints.Count(id)){
+                pMP = pMap->MapPoints.Get(id);
+                vpMPs.push_back(pMP);
+            }else
+                nError++;
+        }
+        {
+            std::stringstream ss;
+            ss<<"update local map = "<<nLocalMap<<" "<<nUpdatedMPs<<" "<<nError<<std::endl;
+            WriteLog(ss.str());
         }
 //WriteLog("B");
         //auto prevMPs = LocalMapPoints.get();
@@ -425,10 +461,11 @@ WriteLog("UpdateLocalMap::Start");
             bSetLocalMap = true;
         }
 
-WriteLog("UpdateLocalMap::End");
+        WriteLog("UpdateLocalMap::End");
         bReqLocalMap = false;
         nLastKeyFrameId = id;
     }
+
     int CreateReferenceFrame2(int id, float* data){
         return -1;
     }
@@ -492,10 +529,10 @@ WriteLog("UpdateLocalMap::End");
 
     }
 
-    int CreateReferenceFrame(int id, bool bNotBase, float* data){
-    //void CreateReferenceFrame(int id, const cv::Mat& data){
-        WriteLog("SetReference::Start!!!!!!!!!!!!!!!!!!!!!!!!!!!!");//, std::ios::trunc
-        float* tdata = data;
+    int CreateReferenceFrame(int id, bool bNotBase, float* data, int idx, float* mdata){
+        //void CreateReferenceFrame(int id, const cv::Mat& data){
+        //WriteLog("SetReference::Start!!!!!!!!!!!!!!!!!!!!!!!!!!!!");//, std::ios::trunc
+        float* tdata = data+idx;
         int N = (int)tdata[2];
 
         //무조건 빼내야 하는 것임.
@@ -505,15 +542,85 @@ WriteLog("UpdateLocalMap::End");
 
 //WriteLog("GetFrame");
         if(N > 30){
-WriteLog("CreateReference Start");
+            WriteLog("CreateReference Start");
+            //{
+            //int Nmp = (int)data[13 + N*5+2];
+            //std::stringstream ss;
+            //ss<<"test = "<<N<<" "<<Nmp<<" "<<std::endl;
+            //WriteLog(ss.str());
+            //}
+
+            //맵포인트 갱신
+            int Nmp = (int)tdata[15 + N*5];
+            int nMPidx = 16 + N*5;
+            {
+                std::stringstream ss;
+                ss<<"Test "<<N<<" "<<Nmp<<std::endl;
+                WriteLog(ss.str());
+            }
+            WriteLog("update mp start");
+            if(bNotBase){
+                for(int i = 0; i < Nmp; i++){
+                    int id = (int)tdata[nMPidx++];
+                    int label = (int)tdata[nMPidx++];
+                    float x = tdata[nMPidx++];
+                    float y = tdata[nMPidx++];
+                    float z = tdata[nMPidx++];
+
+                    EdgeSLAM::MapPoint* pMP = nullptr;
+                    if(pMap->MapPoints.Count(id)){
+                        pMP = pMap->MapPoints.Get(id);
+                        pMP->SetWorldPos(x,y,z);
+                    }else{
+                        pMP = new EdgeSLAM::MapPoint(id, x, y, z);
+                        pMap->MapPoints.Update(id, pMP);
+                    }
+                }
+            }
+
+            WriteLog("update mp end");
+            {
+                int nIdx = 15;
+                int nMapIdx = 0;
+                int nError = 0;
+                int nError2 = 0;
+                cv::Mat mapData = cv::Mat(N*3,1,CV_32FC1,mdata);
+                for (int i = 0; i < N; i++) {
+                    int id = (int)tdata[nIdx];
+                    nIdx+=5;
+                    if(pMap->MapPoints.Count(id)){
+                        int midx = 3*i;
+                        auto pMPi = pMap->MapPoints.Get(id);
+                        if(pMPi && !pMPi->isBad()){
+                            cv::Mat X = pMPi->GetWorldPos();
+                            mapData.at<float>(midx) = X.at<float>(0);
+                            mapData.at<float>(midx+1) = X.at<float>(1);
+                            mapData.at<float>(midx+2) = X.at<float>(2);
+                        }else
+                        {
+                            nError2++;
+                            mapData.at<float>(midx) = 0.0;
+                            mapData.at<float>(midx+1) = 0.0;
+                            mapData.at<float>(midx+2) = 0.0;
+                        }
+                    }else{
+                        nError++;
+                    }
+                }
+                std::stringstream ss;
+                ss<<"reference::error = "<<N<<"=="<<nError<<" "<<nError2<<std::endl;
+                WriteLog(ss.str());
+            }
             auto pRefFrame = new EdgeSLAM::RefFrame(pCamera, tdata+2);
+            WriteLog("update kf end");
             pDetector->Compute(img, cv::Mat(), pRefFrame->mvKeys, pRefFrame->mDescriptors);
             //std::vector<cv::Mat> vCurrentDesc = Utils::toDescriptorVector(pRefFrame->mDescriptors);
             //pVoc->transform(vCurrentDesc, pRefFrame->mBowVec, pRefFrame->mFeatVec, 4);
             nRefMatches = pRefFrame->mvpMapPoints.size();
             pRefFrame->UpdateMapPoints();
-
+            WriteLog("update kf end2");
             if(bNotBase){
+
                 dequeRefFrames.push_back(pRefFrame);
                 ////local map 갱신
                 std::set<EdgeSLAM::MapPoint*> spMPs;
@@ -563,7 +670,7 @@ WriteLog("CreateReference Start");
                 }
             }
 
-WriteLog("Reference::UpdateLocalMap::End");
+            WriteLog("Reference::UpdateLocalMap::End");
             pMap->SetReferenceFrame(pRefFrame);
             if(!bSetReferenceFrame){
                 bSetReferenceFrame = true;

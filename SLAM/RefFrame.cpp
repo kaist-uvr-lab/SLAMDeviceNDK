@@ -33,30 +33,20 @@ namespace EdgeSLAM {
         mpCamPose = new CameraPose(tempT);
 
         int nIdx = 13;
+
         for (int i = 0; i < N; i++) {
+            int id = (int)data[nIdx++];
             cv::KeyPoint kp;
             kp.pt.x = data[nIdx++];
             kp.pt.y = data[nIdx++];
             kp.octave = (int)data[nIdx++];
             kp.angle = data[nIdx++];
-            int id = (int)data[nIdx++];
-            int label = (int)data[nIdx++];
-            float x = data[nIdx++];
-            float y = data[nIdx++];
-            float z = data[nIdx++];
-
-            //if(kp.octave >= detector->mnScaleLevels)
-            //    continue;
 
             MapPoint* pMP = nullptr;
             if(MAP->MapPoints.Count(id)){
                 pMP = MAP->MapPoints.Get(id);
-                pMP->SetWorldPos(x,y,z);
-            }else{
-                pMP = new MapPoint(id, x, y, z);
-                MAP->MapPoints.Update(id, pMP);
+                pMP->mpRefKF = this;
             }
-            pMP->mpRefKF = this;
             mvpMapPoints[i] = pMP;
             mvKeys[i] = kp;
         }

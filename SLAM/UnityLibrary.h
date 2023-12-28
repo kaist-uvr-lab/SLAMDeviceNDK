@@ -43,9 +43,9 @@ extern "C" {
     void EraseImage(int id);
     bool NeedNewKeyFrame(int fid);
     void NeedNewKeyFrame2(int fid);
-    int CreateReferenceFrame(int id, bool bNotBase, float* data);
+    int CreateReferenceFrame(int id, bool bNotBase, float* data, int idx, float* mdata);
     int CreateReferenceFrame2(int id, float* data);
-    void UpdateLocalMap(int id, int n, void* data);
+    void UpdateLocalMap(int id, float* data);
     int DynamicObjectTracking(int id, int& objID, void* posedata, void* oposedata);
     bool Localization(void* data, void* posedata, int id, double ts, int nQuality, bool bNotBase, bool bTracking, bool bVisualization);
     float UploadData(char* data, int datalen, int id, char* ckey, int clen1, char* csrc, int clen2, double ts);
